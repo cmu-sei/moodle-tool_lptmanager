@@ -48,7 +48,7 @@ class sync extends moodleform {
     public function definition() {
         $mform = $this->_form;
         $context = context_system::instance();
-
+/*
 	// Get templates
 	$templates = api::list_templates('shortname', 'ASC', null, null, $context);
         $options = array();
@@ -65,7 +65,7 @@ class sync extends moodleform {
         $mform->addElement('advcheckbox', 'syncall', get_string('syncall', 'tool_lptmanager'));
         $mform->setType('syncall', PARAM_BOOL);
         $mform->addHelpButton('syncall', 'syncall', 'tool_lptmanager');
-
+ */
 	// Get nice frameworks
 	$frameworks = api::list_frameworks('shortname', 'ASC', null, null, $context);
 	$options = array(); 
@@ -79,6 +79,12 @@ class sync extends moodleform {
             $mform->setType('frameworkid', PARAM_INT);
 	    $mform->addRule('frameworkid', null, 'required', null, 'client');
         }
+
+
+
+	// TODO add field for user to enter regex value for learning plans
+	// regex value should checked inside the competency's idnumber field, ie: WRL inside of CE-WRL-001
+
 
         $this->add_action_buttons(true, get_string('sync', 'tool_lptmanager'));
         $mform->setDisableShortforms();

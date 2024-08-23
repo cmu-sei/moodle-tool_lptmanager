@@ -45,6 +45,7 @@ if ($form->is_cancelled()) {
 } else if ($data = $form->get_data()) {
     require_sesskey();
 
+    // TODO should just call functions from lp_importer to create and link learning plan templates/competencies
     $syncer = new \tool_lptmanager\lp_syncer();
 
     if ($data->syncall) {
