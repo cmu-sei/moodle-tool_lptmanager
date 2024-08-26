@@ -56,3 +56,5 @@ $string['shortname'] = 'Short name';
 $string['learningplansimported'] = 'Learning Plan Templates Imported';
 $string['privacy:metadata'] = 'The Import learning plan templates plugin does not store any personal data.';
 $string['noframeworks'] = 'No Competency Frameworks Found';
+$string['competencyname'] = 'Competency Name';
+$string['competencyname_help'] = 'Enter the name or a regex pattern to match competencies by their name.';

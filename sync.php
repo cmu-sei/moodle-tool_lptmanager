@@ -24,6 +24,7 @@
 
 require_once(__DIR__ . '/../../../config.php');
 require_once($CFG->libdir.'/adminlib.php');
+use core_competency\api;
 
 admin_externalpage_setup('toollpsync');
 
@@ -46,15 +47,36 @@ if ($form->is_cancelled()) {
     require_sesskey();
 
     // TODO should just call functions from lp_importer to create and link learning plan templates/competencies
-    $syncer = new \tool_lptmanager\lp_syncer();
+    $syncer = new \tool_lptmanager\lp_importer();
+    
+        // Extract the regex value from the form data
+        $regexvalue = $data->regexvalue;
 
-    if ($data->syncall) {
-        $syncer->sync();
-    } else {
-        $syncer->sync_one($data->templateid);
-    }
+        // Split the string by dashes
+        $parts = explode('-', $regexvalue);
 
-    die();
+        // Check if the array has the expected parts
+        if (isset($parts[1])) {
+            $extracted_competency_value = $parts[1];
+        } else {
+            echo "No match found.";
+        }
+
+        // Define filters for competency search
+        $filters = array();
+    
+        // Get the list of competencies based on the regex filter
+        $competencies = api::list_competencies($filters);
+    
+        // Process the competencies as needed
+        foreach ($competencies as $competency) {
+            $idnumber = $competency->get('idnumber');
+            if (strpos($idnumber, $extracted_competency_value) !== false) {
+                $syncer->sync_learning_plan_template($competency);
+            }
+        }
+    
+        die();
 }
 
 echo $OUTPUT->header();
