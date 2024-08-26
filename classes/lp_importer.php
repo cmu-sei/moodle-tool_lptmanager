@@ -256,9 +256,10 @@ class lp_importer {
         $lp = api::create_template($record);
 
         $competencyframeworkid = "";
+        var_dump($workrole);
         $frameworks = api::list_frameworks('shortname', 'ASC', null, null, $context);
         foreach ($frameworks as $framework) {
-            if ($framework->get('idnumber') === $workrole->competencyframeworkidnumber) {
+            if ($framework->get('id') === $workrole->competencyframeworkidnumber) {
                 $competencyframeworkid = $framework->get('id');
             }
 	}
@@ -276,6 +277,58 @@ class lp_importer {
                 }
             }
         }
+    }
+
+
+    /**
+     * Recursive function to sync and add a competency with all it's children.
+     *
+     * @param stdClass $record Raw data for the new competency
+     * @param competency $parent
+     * @param competency_framework $framework
+     */
+    public function sync_learning_plan_template($workrole) {
+        // check for existing template
+        $context = context_system::instance();
+        $templates = api::list_templates('shortname', 'ASC', null, null, $context);
+
+        foreach ($templates as $template) {
+            if ($workrole->get('shortname') === $template->get('shortname')) {
+                debugging("template already exists", DEBUG_DEVELOPER);
+                // TODO alert user
+                return;
+            }
+        }
+
+        // add template
+        $record = new \stdClass();
+        $record->shortname = $workrole->get('shortname');
+        $record->description = $workrole->get('description');
+        $record->contextid = 1;
+        $lp = api::create_template($record);
+
+        $competencyframeworkid = "";
+        $frameworks = api::list_frameworks('shortname', 'ASC', null, null, $context);
+        foreach ($frameworks as $framework) {
+            if ($framework->get('id') === $workrole->get('competencyframeworkid')) {
+                $competencyframeworkid = $framework->get('id');
+            }
+	}
+	if ($competencyframeworkid === "") {
+            print_error("could not find competencyframeworkid " . $workrole->get('competencyframeworkid'));
+	}
+
+    $relatedcompetencies = api::list_related_competencies($workrole->get('id'));
+    foreach ($relatedcompetencies as $related) {
+        $relatedid = $related->get('idnumber');
+        $filters = array('idnumber' => $relatedid, 'competencyframeworkid' => $competencyframeworkid);
+        $competencies = api::list_competencies($filters);
+        foreach ($competencies as $competency) {
+            if ($competency->get('idnumber') === $relatedid) {
+                api::add_competency_to_template($lp->get('id'), $competency->get('id'));
+            }
+        }
+    }
     }
 
     /**
