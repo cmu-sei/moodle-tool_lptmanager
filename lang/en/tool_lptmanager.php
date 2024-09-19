@@ -55,3 +55,4 @@ $string['relatedidnumbers'] = 'Cross-referenced competency ID numbers';
 $string['shortname'] = 'Short name';
 $string['learningplansimported'] = 'Learning Plan Templates Imported';
 $string['privacy:metadata'] = 'The Import learning plan templates plugin does not store any personal data.';
+$string['noframeworks'] = 'No Competency Frameworks Found';
