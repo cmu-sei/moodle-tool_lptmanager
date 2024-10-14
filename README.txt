@@ -1,13 +1,13 @@
 # Learning Plan Template Manager for Moodle
 
 ## Description
-This is an admin tool plugin that allows for the import, export, and automatic creation of Learning Plan Templates from a Competency Framnework.
+This is an admin tool plugin that allows for the import, export, and automatic creation of Learning Plan Templates from a Competency Framework.
 
 ## Installation
 * Download the plugin and extract into admin/tool/lptmanager
 
 ## Usage
-The plugin currently contains a temporary cront task that will create learning plan templates based on competencies with the regex -WRL- in the name. This regex matches the work roles listed in the NIST NICE Framework for Cyber. This task is temporary because a form is being developed that will allow the user to specifiy the regex and confirm the templates prior to their creation.
+The plugin currently contains a temporary cron task that will create learning plan templates based on competencies with the regex -WRL- in the name. This regex matches the work roles listed in the NIST NICE Framework for Cybersecurity. This task is temporary because a form is being developed that will allow the user to specify the regex and confirm the templates prior to their creation.
 
 To run the task manually:
 php admin/cli/scheduled_task.php --execute=\\tool_lptmanager\\task\\cron_task
