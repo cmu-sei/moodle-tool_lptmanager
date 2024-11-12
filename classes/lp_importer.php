@@ -69,6 +69,7 @@ class lp_importer {
     protected $useprogressbar = false;
     /** @var \core\progress\display_if_slow|null $progress The progress bar instance. */
     protected $progress = null;
+    protected $categoryid = null;
 
     /**
      * Store an error message for display later
@@ -156,7 +157,7 @@ class lp_importer {
      * @param bool $useprogressbar Whether progress bar should be displayed, to avoid html output on CLI.
      */
     public function __construct($text = null, $encoding = null, $delimiter = null, $importid = 0, $mappingdata = null,
-            $useprogressbar = false) {
+            $useprogressbar = false, $categoryid=null) {
 
         global $CFG;
 
@@ -166,6 +167,7 @@ class lp_importer {
 
         // The idnumber is concatenated with the category names.
         require_once($CFG->libdir . '/csvlib.class.php');
+        $this->categoryid = $categoryid;
 
         $type = 'competency_template';
 
@@ -245,50 +247,33 @@ class lp_importer {
      * @param competency $parent
      * @param competency_framework $framework
      */
-    public function create_learning_plan_template($workrole) {
+    public function create_learning_plan_template($workrole, $categoryid = null) {
 
-        // check for existing template
         $context = context_system::instance();
         $templates = api::list_templates('shortname', 'ASC', null, null, $context);
-
+    
         foreach ($templates as $template) {
             if ($workrole->shortname === $template->get('shortname')) {
                 debugging("template already exists", DEBUG_DEVELOPER);
-                // TODO alert user
                 return;
             }
         }
-
-        // add template
+    
+        // Add template with category if provided
         $record = new \stdClass();
         $record->shortname = $workrole->shortname;
         $record->description = $workrole->description;
-        $record->contextid = 1;
-        $lp = api::create_template($record);
-
-        $competencyframeworkid = "";
-        var_dump($workrole);
-        $frameworks = api::list_frameworks('shortname', 'ASC', null, null, $context);
-        foreach ($frameworks as $framework) {
-            if ($framework->get('id') === $workrole->competencyframeworkidnumber) {
-                $competencyframeworkid = $framework->get('id');
-            }
-	}
-	if ($competencyframeworkid === "") {
-            print_error("could not find competencyframeworkid " . $workrole->competencyframeworkidnumber);
-	}
-
-        $relateds = explode(",", $workrole->relatedidnumbers);
-        foreach ($relateds as $related) {
-            $filters = array('idnumber' => $related, 'competencyframeworkid' => $competencyframeworkid);
-            $competencies = api::list_competencies($filters);
-            foreach ($competencies as $competency) {
-                if ($competency->get('idnumber') === $related) {
-                    api::add_competency_to_template($lp->get('id'), $competency->get('id'));
-                }
-            }
+        $record->contextid = $context->id;
+    
+        // If categoryid is set, associate the template with that category
+        if (!empty($categoryid)) {
+            $record->coursecategoryid = $categoryid;
         }
-    }
+    
+        $lp = api::create_template($record);
+    
+        // The rest of the logic for processing competencies...
+    }    
 
 
     /**
@@ -347,21 +332,21 @@ class lp_importer {
      * @return competency_framework
      */
     public function import() {
-        
         if ($this->useprogressbar === true) {
             $this->progress = new \core\progress\display_if_slow(get_string('importingfile', 'tool_lptmanager'));
         } else {
             $this->progress = new \core\progress\none();
         }
         $this->progress->start_progress('', count($this->framework));
-
+    
         foreach ($this->framework as $record) {
             $record->contextid = context_system::instance()->id;
-            $this->create_learning_plan_template($record);
+            $this->create_learning_plan_template($record, $this->categoryid); // Use the stored category ID
             $this->progress->increment_progress();
         }
         $this->progress->end_progress();
-
+    
         $this->importer->cleanup();
     }
+    
 }

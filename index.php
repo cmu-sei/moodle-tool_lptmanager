@@ -54,7 +54,6 @@ $PAGE->set_context($context);
 $PAGE->set_url($url);
 $PAGE->set_title($pagetitle);
 $PAGE->set_pagelayout('admin');
-$PAGE->set_heading($pagetitle);
 
 $form = null;
 echo $OUTPUT->header();
@@ -73,8 +72,9 @@ if ($form->is_cancelled()) {
     require_sesskey();
 
     if ($data->confirm) {
+        $categoryid = !empty($data->usecategory) ? $data->categoryid : null;
         $importid = $data->importid;
-        $importer = new \tool_lptmanager\lp_importer(null, null, null, $importid, $data, true);
+        $importer = new \tool_lptmanager\lp_importer(null, null, null, $importid, $data, true, $categoryid);
 
         $error = $importer->get_error();
         if ($error) {
@@ -93,7 +93,8 @@ if ($form->is_cancelled()) {
         $text = $form->get_file_content('importfile');
         $encoding = $data->encoding;
         $delimiter = $data->delimiter_name;
-        $importer = new \tool_lptmanager\lp_importer($text, $encoding, $delimiter, 0, null, true);
+        $categoryid = !empty($data->usecategory) ? $data->categoryid : null;
+        $importer = new \tool_lptmanager\lp_importer($text, $encoding, $delimiter, 0, null, true, $categoryid);
         $confirmform = new \tool_lptmanager\form\import_confirm(null, $importer);
         $form = $confirmform;
         $pagetitle = get_string('confirmcolumnmappings', 'tool_lptmanager');
