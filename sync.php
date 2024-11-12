@@ -55,7 +55,6 @@ $PAGE->set_context($context);
 $PAGE->set_url($url);
 $PAGE->set_title($pagetitle);
 $PAGE->set_pagelayout('admin');
-$PAGE->set_heading($pagetitle);
 
 $form = new \tool_lptmanager\form\sync($url->out(false), array('persistent' => null, 'context' => $context));
 
