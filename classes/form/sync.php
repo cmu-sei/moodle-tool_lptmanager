@@ -77,27 +77,26 @@ class sync extends moodleform {
         $mform->addHelpButton('syncall', 'syncall', 'tool_lptmanager');
  */
 	// Get nice frameworks
-	$frameworks = api::list_frameworks('shortname', 'ASC', null, null, $context);
-	$options = array(); 
-        foreach ($frameworks as $framework) {
-            $options[$framework->get('id')] = $framework->get('shortname');
-	}
-	if (empty($options)) {
-            $mform->addElement('static', 'frameworkid', '', get_string('noframeworks', 'tool_lptmanager'));
+	    $frameworks = api::list_frameworks('shortname', 'ASC', null, null, $context);
+        $options = array(); 
+            foreach ($frameworks as $framework) {
+                $options[$framework->get('id')] = $framework->get('shortname');
+        }
+        if (empty($options)) {
+                $mform->addElement('html', '<div class="alert alert-warning">'.get_string('noframeworks_help', 'tool_lptmanager').'</div>');
         } else {
             $mform->addElement('select', 'frameworkid', get_string('listcompetencyframeworkscaption', 'tool_lp'), $options);
             $mform->setType('frameworkid', PARAM_INT);
-	    $mform->addRule('frameworkid', null, 'required', null, 'client');
+            $mform->addRule('frameworkid', null, 'required', null, 'client');
+            $this->add_action_buttons(true, get_string('sync', 'tool_lptmanager'));
+                    // TODO add field for user to enter regex value for learning plans
+            $mform->addElement('text', 'regexvalue', get_string('competencyname', 'tool_lptmanager'));
+            $mform->setType('regexvalue', PARAM_RAW); // Not using PARAM_TEXT as it may strip some regex special characters
+            $mform->addRule('regexvalue', null, 'required', null, 'client');
+            $mform->addHelpButton('regexvalue', 'competencyname', 'tool_lptmanager');
         }
-    
-    // TODO add field for user to enter regex value for learning plans
-    $mform->addElement('text', 'regexvalue', get_string('competencyname', 'tool_lptmanager'));
-    $mform->setType('regexvalue', PARAM_RAW); // Not using PARAM_TEXT as it may strip some regex special characters
-    $mform->addRule('regexvalue', null, 'required', null, 'client');
-    $mform->addHelpButton('regexvalue', 'competencyname', 'tool_lptmanager');
-	
-	// regex value should checked inside the competency's idnumber field, ie: WRL inside of CE-WRL-001
-        $this->add_action_buttons(true, get_string('sync', 'tool_lptmanager'));
+        
+        // regex value should checked inside the competency's idnumber field, ie: WRL inside of CE-WRL-001
         $mform->setDisableShortforms();
     }
 }
