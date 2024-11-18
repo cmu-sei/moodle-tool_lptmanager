@@ -88,7 +88,6 @@ class sync extends moodleform {
             $mform->addElement('select', 'frameworkid', get_string('listcompetencyframeworkscaption', 'tool_lp'), $options);
             $mform->setType('frameworkid', PARAM_INT);
             $mform->addRule('frameworkid', null, 'required', null, 'client');
-                    // TODO add field for user to enter regex value for learning plans
             $mform->addElement('text', 'regexvalue', get_string('competencyname', 'tool_lptmanager'));
             $mform->setType('regexvalue', PARAM_RAW); // Not using PARAM_TEXT as it may strip some regex special characters
             $mform->addRule('regexvalue', null, 'required', null, 'client');
