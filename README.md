@@ -1,3 +1,11 @@
+# NEW!! Learning Plan Template Manager for Moodle  
+
+## Description  
+
+**Learning Plan Template Manager** is a plugin for Moodle that allows for the import, export, and automatic creation of learning plan templates from a competency framework. This plugin was specifically developed for work roles in the NIST NICE Cybersecurity Framework.
+
+---
+
 # Learning Plan Template Manager for Moodle
 
 ## Description
