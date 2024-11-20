@@ -96,7 +96,7 @@ Once the LPT Manager plugin has been installed, Moodle administrators or Moodle 
 
 Contributions are welcome. To report issues, suggest features, or contribute code, please follow the steps below.   
 
-1. Open an issue in the [GitHub Issues](#) section.
+1. Open an issue in the [GitHub Issues](https://github.com/cmu-sei/moodle-tool_lptmanager/issues) section.
 2. Create a new branch for your feature or fix.
 3. Make your updates.
 4. Create and submit your pull request.
