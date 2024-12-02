@@ -161,6 +161,11 @@ class lp_importer {
             $useprogressbar = false, $categoryid=null) {
 
         global $CFG;
+        // The format of our records is:
+        // Parent ID number, ID number, Shortname, Description, Description format, Scale values, Scale configuration,
+        // Rule type, Rule outcome, Rule config, Is framework, Taxonomy.
+
+        // The idnumber is concatenated with the category names.
 
         require_once($CFG->libdir . '/csvlib.class.php');
         $this->categoryid = $categoryid;
@@ -276,11 +281,6 @@ class lp_importer {
         $record->shortname = $workrole->shortname;
         $record->description = $workrole->description;
         $record->contextid = $contextid; // Use the stored context ID.
-    
-        // Associate the template with the course category if a category ID was provided.
-        if (!empty($this->categoryid)) {
-            $record->coursecategoryid = $this->categoryid;
-        }
     
         // Call the API to create the learning plan template.
         $lp = api::create_template($record);
