@@ -91,12 +91,10 @@ class import extends moodleform {
         // Dropdown for selecting course category.
         $categories = $DB->get_records_menu('course_categories', null, 'name', 'id, name');
         $mform->addElement('select', 'categoryid', get_string('coursecategory', 'tool_lptmanager'), $categories);
-        $mform->disabledIf('categoryid', 'usecategory', 'notchecked');
         $mform->setType('categoryid', PARAM_INT);
-    
+        $mform->hideIf('categoryid', 'usecategory', 'notchecked');
         $this->add_action_buttons(false, get_string('import', 'tool_lptmanager'));
     }
-    
 
     /**
      * Display an error on the import form.

@@ -69,7 +69,8 @@ class lp_importer {
     protected $useprogressbar = false;
     /** @var \core\progress\display_if_slow|null $progress The progress bar instance. */
     protected $progress = null;
-    protected $categoryid = null;
+    public $categoryid = null;
+    public $contextid;
 
     /**
      * Store an error message for display later
@@ -161,14 +162,21 @@ class lp_importer {
 
         global $CFG;
 
-        // The format of our records is:
-        // Parent ID number, ID number, Shortname, Description, Description format, Scale values, Scale configuration,
-        // Rule type, Rule outcome, Rule config, Is framework, Taxonomy.
-
-        // The idnumber is concatenated with the category names.
         require_once($CFG->libdir . '/csvlib.class.php');
         $this->categoryid = $categoryid;
-
+    
+        // Fetch the contextid for the provided categoryid.
+        if (!empty($categoryid)) {
+            $context = \context_coursecat::instance($categoryid, IGNORE_MISSING);
+            if ($context) {
+                $this->contextid = $context->id; // Store the contextid for use in creating templates.
+            } else {
+                $this->contextid = null; // Handle cases where the context doesn't exist.
+            }
+        } else {
+            $this->contextid = context_system::instance()->id; // Default to system context.
+        }
+    
         $type = 'competency_template';
 
         if (!$importid) {
@@ -247,34 +255,39 @@ class lp_importer {
      * @param competency $parent
      * @param competency_framework $framework
      */
-    public function create_learning_plan_template($workrole, $categoryid = null) {
 
-        $context = context_system::instance();
-        $templates = api::list_templates('shortname', 'ASC', null, null, $context);
+    public function create_learning_plan_template($workrole) {
+        global $DB;
     
+        // Use the `contextid` initialized in the constructor.
+        $contextid = $this->contextid;
+    
+        // Check if a template with the same shortname already exists in the context.
+        $templates = api::list_templates('shortname', 'ASC', null, null, \context::instance_by_id($contextid));
         foreach ($templates as $template) {
             if ($workrole->shortname === $template->get('shortname')) {
-                debugging("template already exists", DEBUG_DEVELOPER);
+                debugging("Template with shortname '{$workrole->shortname}' already exists", DEBUG_DEVELOPER);
                 return;
             }
         }
     
-        // Add template with category if provided
+        // Create the learning plan template record.
         $record = new \stdClass();
         $record->shortname = $workrole->shortname;
         $record->description = $workrole->description;
-        $record->contextid = $context->id;
+        $record->contextid = $contextid; // Use the stored context ID.
     
-        // If categoryid is set, associate the template with that category
-        if (!empty($categoryid)) {
-            $record->coursecategoryid = $categoryid;
+        // Associate the template with the course category if a category ID was provided.
+        if (!empty($this->categoryid)) {
+            $record->coursecategoryid = $this->categoryid;
         }
     
+        // Call the API to create the learning plan template.
         $lp = api::create_template($record);
     
-        // The rest of the logic for processing competencies...
-    }    
-
+        // Additional logic for processing competencies (if needed) can be added here.
+        debugging("Learning plan template '{$workrole->shortname}' created successfully in context ID {$contextid}", DEBUG_DEVELOPER);
+    }
 
     /**
      * Recursive function to sync and add a competency with all it's children.
@@ -340,13 +353,13 @@ class lp_importer {
         $this->progress->start_progress('', count($this->framework));
     
         foreach ($this->framework as $record) {
-            $record->contextid = context_system::instance()->id;
-            $this->create_learning_plan_template($record, $this->categoryid); // Use the stored category ID
+            $record->contextid = $this->contextid; // Pass the fetched contextid.
+            $this->create_learning_plan_template($record);
             $this->progress->increment_progress();
         }
         $this->progress->end_progress();
     
         $this->importer->cleanup();
-    }
+    }    
     
 }

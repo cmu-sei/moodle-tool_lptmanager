@@ -72,7 +72,7 @@ if ($form->is_cancelled()) {
     require_sesskey();
 
     if ($data->confirm) {
-        $categoryid = !empty($data->usecategory) ? $data->categoryid : null;
+        $categoryid = $data->categoryid;
         $importid = $data->importid;
         $importer = new \tool_lptmanager\lp_importer(null, null, null, $importid, $data, true, $categoryid);
 
@@ -80,8 +80,8 @@ if ($form->is_cancelled()) {
         if ($error) {
             $form = new \tool_lptmanager\form\import($url->out(false));
             $form->set_import_error($error);
-	} else {
-	    $importer->import();
+	    } else {
+	        $importer->import();
 
             $urlparams = ['pagecontextid' => $context->id];
             $frameworksurl = new moodle_url('/admin/tool/lp/learningplans.php', $urlparams);
