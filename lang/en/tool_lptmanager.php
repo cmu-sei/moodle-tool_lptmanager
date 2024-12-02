@@ -79,5 +79,5 @@ $string['competencyname_help'] = 'Enter the name or a regex pattern to match com
 $string['crontask'] = 'Create Learning Plan Templates from Competencies with string WRL';
 $string['usecategory'] = 'Use specific category';
 $string['usecategory_desc'] = 'Use specific category';
-$string['usecategory_desc_help'] = 'Select this option to import the learning plan into a specified course category.';
+$string['usecategory_desc_help'] = 'Select this option to import the learning plan into a specified course category. If no course category is selected, the default System category will be used.';
 $string['coursecategory'] = 'Select course category';
