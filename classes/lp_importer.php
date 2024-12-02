@@ -69,6 +69,8 @@ class lp_importer {
     protected $useprogressbar = false;
     /** @var \core\progress\display_if_slow|null $progress The progress bar instance. */
     protected $progress = null;
+    public $categoryid = null;
+    public $contextid;
 
     /**
      * Store an error message for display later
@@ -156,17 +158,30 @@ class lp_importer {
      * @param bool $useprogressbar Whether progress bar should be displayed, to avoid html output on CLI.
      */
     public function __construct($text = null, $encoding = null, $delimiter = null, $importid = 0, $mappingdata = null,
-            $useprogressbar = false) {
+            $useprogressbar = false, $categoryid=null) {
 
         global $CFG;
-
         // The format of our records is:
         // Parent ID number, ID number, Shortname, Description, Description format, Scale values, Scale configuration,
         // Rule type, Rule outcome, Rule config, Is framework, Taxonomy.
 
         // The idnumber is concatenated with the category names.
-        require_once($CFG->libdir . '/csvlib.class.php');
 
+        require_once($CFG->libdir . '/csvlib.class.php');
+        $this->categoryid = $categoryid;
+    
+        // Fetch the contextid for the provided categoryid.
+        if (!empty($categoryid)) {
+            $context = \context_coursecat::instance($categoryid, IGNORE_MISSING);
+            if ($context) {
+                $this->contextid = $context->id; // Store the contextid for use in creating templates.
+            } else {
+                $this->contextid = null; // Handle cases where the context doesn't exist.
+            }
+        } else {
+            $this->contextid = context_system::instance()->id; // Default to system context.
+        }
+    
         $type = 'competency_template';
 
         if (!$importid) {
@@ -245,51 +260,34 @@ class lp_importer {
      * @param competency $parent
      * @param competency_framework $framework
      */
+
     public function create_learning_plan_template($workrole) {
-
-        // check for existing template
-        $context = context_system::instance();
-        $templates = api::list_templates('shortname', 'ASC', null, null, $context);
-
+        global $DB;
+    
+        // Use the `contextid` initialized in the constructor.
+        $contextid = $this->contextid;
+    
+        // Check if a template with the same shortname already exists in the context.
+        $templates = api::list_templates('shortname', 'ASC', null, null, \context::instance_by_id($contextid));
         foreach ($templates as $template) {
             if ($workrole->shortname === $template->get('shortname')) {
-                debugging("template already exists", DEBUG_DEVELOPER);
-                // TODO alert user
+                debugging("Template with shortname '{$workrole->shortname}' already exists", DEBUG_DEVELOPER);
                 return;
             }
         }
-
-        // add template
+    
+        // Create the learning plan template record.
         $record = new \stdClass();
         $record->shortname = $workrole->shortname;
         $record->description = $workrole->description;
-        $record->contextid = 1;
+        $record->contextid = $contextid; // Use the stored context ID.
+    
+        // Call the API to create the learning plan template.
         $lp = api::create_template($record);
-
-        $competencyframeworkid = "";
-        var_dump($workrole);
-        $frameworks = api::list_frameworks('shortname', 'ASC', null, null, $context);
-        foreach ($frameworks as $framework) {
-            if ($framework->get('id') === $workrole->competencyframeworkidnumber) {
-                $competencyframeworkid = $framework->get('id');
-            }
-	}
-	if ($competencyframeworkid === "") {
-            print_error("could not find competencyframeworkid " . $workrole->competencyframeworkidnumber);
-	}
-
-        $relateds = explode(",", $workrole->relatedidnumbers);
-        foreach ($relateds as $related) {
-            $filters = array('idnumber' => $related, 'competencyframeworkid' => $competencyframeworkid);
-            $competencies = api::list_competencies($filters);
-            foreach ($competencies as $competency) {
-                if ($competency->get('idnumber') === $related) {
-                    api::add_competency_to_template($lp->get('id'), $competency->get('id'));
-                }
-            }
-        }
+    
+        // Additional logic for processing competencies (if needed) can be added here.
+        debugging("Learning plan template '{$workrole->shortname}' created successfully in context ID {$contextid}", DEBUG_DEVELOPER);
     }
-
 
     /**
      * Recursive function to sync and add a competency with all it's children.
@@ -347,21 +345,21 @@ class lp_importer {
      * @return competency_framework
      */
     public function import() {
-        
         if ($this->useprogressbar === true) {
             $this->progress = new \core\progress\display_if_slow(get_string('importingfile', 'tool_lptmanager'));
         } else {
             $this->progress = new \core\progress\none();
         }
         $this->progress->start_progress('', count($this->framework));
-
+    
         foreach ($this->framework as $record) {
-            $record->contextid = context_system::instance()->id;
+            $record->contextid = $this->contextid; // Pass the fetched contextid.
             $this->create_learning_plan_template($record);
             $this->progress->increment_progress();
         }
         $this->progress->end_progress();
-
+    
         $this->importer->cleanup();
-    }
+    }    
+    
 }

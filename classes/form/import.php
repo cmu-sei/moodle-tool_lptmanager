@@ -57,31 +57,42 @@ class import extends moodleform {
      * Define the form - called by parent constructor
      */
     public function definition() {
-        global $CFG;
+        global $CFG, $DB;
         require_once($CFG->libdir . '/csvlib.class.php');
-
+    
         $mform = $this->_form;
+    
+        // File picker for import file.
         $element = $mform->createElement('filepicker', 'importfile', get_string('importfile', 'tool_lptmanager'));
         $mform->addElement($element);
         $mform->addHelpButton('importfile', 'importfile', 'tool_lptmanager');
         $mform->addRule('importfile', null, 'required');
         $mform->addElement('hidden', 'confirm', 0);
         $mform->setType('confirm', PARAM_BOOL);
-
+    
+        // CSV delimiter and encoding options.
         $choices = csv_import_reader::get_delimiter_list();
         $mform->addElement('select', 'delimiter_name', get_string('csvdelimiter', 'tool_lptmanager'), $choices);
-        if (array_key_exists('cfg', $choices)) {
-            $mform->setDefault('delimiter_name', 'cfg');
-        } else if (get_string('listsep', 'langconfig') == ';') {
-            $mform->setDefault('delimiter_name', 'semicolon');
-        } else {
-            $mform->setDefault('delimiter_name', 'comma');
-        }
-
+        $mform->setDefault('delimiter_name', array_key_exists('cfg', $choices) ? 'cfg' : 'comma');
+    
         $choices = core_text::get_encodings();
         $mform->addElement('select', 'encoding', get_string('encoding', 'tool_lptmanager'), $choices);
         $mform->setDefault('encoding', 'UTF-8');
+    
+        // Checkbox to decide if importing to a specific category.
+        // Add the checkbox element without the description.
+        // Add the checkbox element without the description.
+        $mform->addElement('advcheckbox', 'usecategory', get_string('usecategory', 'tool_lptmanager'));
+        $mform->setType('usecategory', PARAM_BOOL);
 
+        // Add a help button with the description.
+        $mform->addHelpButton('usecategory', 'usecategory_desc', 'tool_lptmanager');
+
+        // Dropdown for selecting course category.
+        $categories = $DB->get_records_menu('course_categories', null, 'name', 'id, name');
+        $mform->addElement('select', 'categoryid', get_string('coursecategory', 'tool_lptmanager'), $categories);
+        $mform->setType('categoryid', PARAM_INT);
+        $mform->hideIf('categoryid', 'usecategory', 'notchecked');
         $this->add_action_buttons(false, get_string('import', 'tool_lptmanager'));
     }
 

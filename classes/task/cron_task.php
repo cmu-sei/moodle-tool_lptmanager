@@ -96,11 +96,9 @@ class cron_task extends \core\task\scheduled_task {
                 }
         }
         echo "found " . count($workroles) . " work roles as competencies\n";
-        //var_dump($workroles);
 
         $templates = api::list_templates('shortname', 'ASC', null, null, $context);
         echo "found " . count($templates) . " learning plan templates\n";
-        //var_dump($templates);
 
         // TODO for each work role, check for a learning plan
         foreach ($workroles as $workrole) {
@@ -115,11 +113,9 @@ class cron_task extends \core\task\scheduled_task {
                     // TODO get work role tsks
                     $relateds = api::list_related_competencies($workrole->get('id'));
                     echo "found " . count($relateds) . " related comps for workrole\n";
-                    //var_dump($relateds);
 
                     $tsks = array();
                     $tsks = api::list_competencies_in_template($template->get('id'));
-                    //var_dump($tsks);
                     echo "there are " . count($tsks) . " competencies mapped to this work role's learning plan template\n";
 
                     // TODO map them
@@ -136,7 +132,6 @@ class cron_task extends \core\task\scheduled_task {
                 $record = new \stdClass();
                 $record->shortname = $workrole->get('shortname');
                 $record->description = $workrole->get('description');
-                var_dump($record);
                 //api::create_template($record);
                 $template = array();
                 $template['shortname'] = $workrole->get('shortname');

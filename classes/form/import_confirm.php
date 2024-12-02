@@ -57,12 +57,13 @@ class import_confirm extends moodleform {
      */
     public function definition() {
         $importer = $this->_customdata;
-
         $mform = $this->_form;
         $mform->addElement('hidden', 'confirm', 1);
         $mform->setType('confirm', PARAM_BOOL);
         $mform->addElement('hidden', 'importid', $importer->get_importid());
         $mform->setType('importid', PARAM_INT);
+        $mform->addElement('hidden', 'categoryid', $importer->categoryid);
+        $mform->setType('categoryid', PARAM_INT);
 
         $requiredheaders = $importer->list_required_headers();
         $foundheaders = $importer->list_found_headers();
