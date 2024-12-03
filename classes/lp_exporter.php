@@ -170,7 +170,12 @@ class lp_exporter {
                     $related .= "," . $competency->get('idnumber');
                 }
             }
-            $row[] = $framework->get('idnumber');
+            // Add framework ID number to the row only if $framework is valid.
+            if ($framework && is_object($framework)) {
+                $row[] = $framework->get('idnumber');
+            } else {
+                $row[] = ""; // Leave the framework column empty if no valid framework is found.
+            }
             $row[] = $related;
 
             $writer->add_data($row);
