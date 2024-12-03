@@ -56,9 +56,12 @@ Once the LPT Manager plugin has been installed, Moodle administrators or Moodle 
 
 1. In Moodle, navigate to **Site administration**, **Competencies**, **Import learning plan templates**.
 2. Click **Choose a file...**, then **Choose File** and **Upload this file** to upload the .CSV learning plan template file.
+
+>Choose the option **Use specific category** to import the learning plan template into a specific course category. If none is selected, the system will use the default category.
+
 3. Click **Import**.
 
-   ![](img/import-1.png)
+   ![](img/import-2.png)
 
 4. **Confirm** the column mappings.
 
