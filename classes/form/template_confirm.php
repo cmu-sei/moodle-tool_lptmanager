@@ -40,26 +40,20 @@ DM24-1177
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-namespace tool_lptmanager\form;
+ namespace tool_lptmanager\form;
 
-defined('MOODLE_INTERNAL') || die('Direct access to this script is forbidden.');
+defined('MOODLE_INTERNAL') || die();
 
 use moodleform;
-use core_competency\api;
-use tool_lptmanager\lp_importer;
 
-require_once($CFG->libdir.'/formslib.php');
+require_once($CFG->libdir . '/formslib.php');
 
-class import_confirm extends moodleform {
-
-    /**
-     * Define the form - called by parent constructor
-     */
+class template_confirm extends moodleform {
     public function definition() {
-        $importer = $this->_customdata;
+        $importer = $this->_customdata; // Pass the importer object as custom data.
         $mform = $this->_form;
-        $mform->addElement('hidden', 'confirm', 1);
-        $mform->setType('confirm', PARAM_BOOL);
+
+        // Add hidden fields for processing confirmation.
         $mform->addElement('hidden', 'importid', $importer->get_importid());
         $mform->setType('importid', PARAM_INT);
         $mform->addElement('hidden', 'categoryid', $importer->categoryid);
@@ -71,16 +65,7 @@ class import_confirm extends moodleform {
             $foundheaders = range(0, count($requiredheaders));
         }
         $foundheaders[-1] = get_string('none');
-
-        foreach ($requiredheaders as $index => $requiredheader) {
-            $mform->addElement('select', 'header' . $index, $requiredheader, $foundheaders);
-            if (isset($foundheaders[$index])) {
-                $mform->setDefault('header' . $index, $index);
-            } else {
-                $mform->setDefault('header' . $index, -1);
-            }
-        }
-
+    
         // Display the table of learning plan templates.
         if (!empty($importer->framework)) {
             $tablehtml = '<table class="generaltable">';
@@ -89,17 +74,20 @@ class import_confirm extends moodleform {
                 get_string('description', 'tool_lptmanager') . '</th></tr></thead>';
             $tablehtml .= '<tbody>';
             foreach ($importer->framework as $template) {
-                // Ensure both shortname and description have values before adding the row
-                if (!empty($template->shortname) && !empty($template->description)) {
-                    $tablehtml .= '<tr><td>' . htmlspecialchars($template->shortname) . '</td>';
-                    $tablehtml .= '<td>' . htmlspecialchars($template->description) . '</td></tr>';
-                }
+                $tablehtml .= '<tr><td>' . htmlspecialchars($template->shortname) . '</td>';
+                $tablehtml .= '<td>' . htmlspecialchars($template->description) . '</td></tr>';
             }
             $tablehtml .= '</tbody></table>';
             $mform->addElement('html', $tablehtml);
-            
         }
 
-        $this->add_action_buttons(true, get_string('confirm', 'tool_lptmanager'));
+
+        // Add hidden fields if needed for further processing.
+        $mform->addElement('hidden', 'confirmtemplate', 1); // Hidden field for template confirmation.
+        $mform->setType('confirmtemplate', PARAM_BOOL);
+
+
+        // Add final confirmation buttons (Confirm and Cancel).
+        $this->add_action_buttons(true, get_string('confirmtemplate', 'tool_lptmanager'));
     }
 }

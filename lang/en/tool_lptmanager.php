@@ -82,3 +82,6 @@ $string['usecategory'] = 'Use specific category';
 $string['usecategory_desc'] = 'Use specific category';
 $string['usecategory_desc_help'] = 'Select this option to import the learning plan into a specified course category. If no course category is selected, the default System category will be used.';
 $string['coursecategory'] = 'Select course category';
+$string['learningplantemplates'] = 'Learning Plan Templates to Be Created';
+$string['confirmlearningplantemplates'] = 'Review Learning Plan Templates';
+$string['confirmtemplate'] = 'Confirm Creation';

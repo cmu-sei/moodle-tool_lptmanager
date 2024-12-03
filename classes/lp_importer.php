@@ -60,7 +60,7 @@ class lp_importer {
     /** @var array $flat The flat competencies tree */
     protected $flat = array();
     /** @var array $framework The framework info */
-    protected $framework = array();
+    public $framework = array();
     protected $mappings = array();
     protected $importid = 0;
     protected $importer = null;
@@ -262,7 +262,7 @@ class lp_importer {
      */
 
     public function create_learning_plan_template($workrole) {
-        global $DB;
+        global $DB, $OUTPUT;
     
         // Use the `contextid` initialized in the constructor.
         $contextid = $this->contextid;
@@ -272,6 +272,10 @@ class lp_importer {
         foreach ($templates as $template) {
             if ($workrole->shortname === $template->get('shortname')) {
                 debugging("Template with shortname '{$workrole->shortname}' already exists", DEBUG_DEVELOPER);
+                echo $OUTPUT->notification(
+                    "A template with the shortname '{$workrole->shortname}' already exists.",
+                    'notifywarning'
+                );
                 return;
             }
         }
@@ -284,7 +288,14 @@ class lp_importer {
     
         // Call the API to create the learning plan template.
         $lp = api::create_template($record);
-    
+        global $OUTPUT;
+
+        echo $OUTPUT->notification(
+            "Learning plan template '{$workrole->shortname}' created successfully.",
+            'notifysuccess'
+        );
+        echo $OUTPUT->notification(get_string('learningplansimported', 'tool_lptmanager'), 'notifysuccess');
+
         // Additional logic for processing competencies (if needed) can be added here.
         debugging("Learning plan template '{$workrole->shortname}' created successfully in context ID {$contextid}", DEBUG_DEVELOPER);
     }
