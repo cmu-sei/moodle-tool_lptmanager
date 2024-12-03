@@ -53,6 +53,7 @@ class lp_exporter {
 
     /** @var $error string */
     protected $error = '';
+    protected $template;
 
     /**
      * Constructor
@@ -69,7 +70,7 @@ class lp_exporter {
 
         $this->template = api::read_template($templateid);
 
-	$writer = new csv_export_writer();
+	    $writer = new csv_export_writer();
         $filename = clean_param(preg_replace('/\s+/', '_', $this->template->get('shortname')) . '-' . $this->template->get('id'), PARAM_FILE);
         $writer->set_filename($filename);
         $headers = lp_importer::list_required_headers();
@@ -88,24 +89,40 @@ class lp_exporter {
 	$framework = "";
 
 	foreach ($competencies as $competency) {
-	    if ($framework === "") {
-		$framework = $competency->get_framework();
-	    } else if ($framework->get('id') !== $competency->get('competencyframeworkid')) {
-	    	debugging("multiple frameworks in learning plan", DEBUG_DEVELOPER);
-		print_error("multiple frameworks in learning plan: " . $framework->get('id') . " and " . $competency->get('competencyframeworkidnumber'));
-		// TODO throw exception
-	    }
-            if ($related === "") {
-                    $related = $competency->get('idnumber');
-            } else {
-                    $related .= "," . $competency->get('idnumber');
+        // Initialize the framework if it's empty.
+        if ($framework === "") {
+            $framework = $competency->get_framework();
+            if (!$framework || !is_object($framework)) {
+                // If no valid framework is found, set framework to null and break.
+                $framework = null;
+                break;
             }
-	}
-
-	$row[] = $framework->get('idnumber');
-        $row[] = $related;
-        $writer->add_data($row);
-        $writer->download_file();
+        } else if ($framework->get('id') !== $competency->get('competencyframeworkid')) {
+            debugging("multiple frameworks in learning plan", DEBUG_DEVELOPER);
+            throw new \Exception(
+                "Multiple frameworks in learning plan: " . $framework->get('id') .
+                " and " . $competency->get('competencyframeworkidnumber')
+            );
+        }
+    
+        // Append competency ID numbers to $related.
+        if ($related === "") {
+            $related = $competency->get('idnumber');
+        } else {
+            $related .= "," . $competency->get('idnumber');
+        }
+    }
+    
+    // Add framework ID number to the row only if $framework is valid.
+    if ($framework && is_object($framework)) {
+        $row[] = $framework->get('idnumber');
+    } else {
+        $row[] = ""; // Leave the framework column empty if no valid framework is found.
+    }
+    
+    $row[] = $related;
+    $writer->add_data($row);
+    $writer->download_file();    
     }
 
     /**
