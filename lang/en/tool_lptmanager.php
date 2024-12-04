@@ -82,3 +82,5 @@ $string['usecategory'] = 'Use specific category';
 $string['usecategory_desc'] = 'Use specific category';
 $string['usecategory_desc_help'] = 'Select this option to import the learning plan into a specified course category. If no course category is selected, the default System category will be used.';
 $string['coursecategory'] = 'Select course category';
+$string['importnote'] = '<strong>Note:</strong> Before importing learning plan templates into Moodle, ensure that any associated competency frameworks have already been imported.';
+$string['exportnote'] = '<strong>Note:</strong> After exporting the learning plan templates, you may also wish to export any competency frameworks used by these learning plan templates';

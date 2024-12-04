@@ -58,6 +58,8 @@ class export extends moodleform {
     public function definition() {
         $mform = $this->_form;
 
+        $mform->addElement('html', get_string('exportnote','tool_lptmanager'));
+
         $context = context_system::instance();
         $templates = api::list_templates('shortname', 'ASC', null, null, $context);
         $options = array();
