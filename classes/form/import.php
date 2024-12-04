@@ -63,6 +63,7 @@ class import extends moodleform {
         $mform = $this->_form;
     
         // File picker for import file.
+        $mform->addElement('static', 'importnote', get_string('importnote', 'tool_lptmanager'));
         $element = $mform->createElement('filepicker', 'importfile', get_string('importfile', 'tool_lptmanager'));
         $mform->addElement($element);
         $mform->addHelpButton('importfile', 'importfile', 'tool_lptmanager');
