@@ -81,6 +81,8 @@ class import_confirm extends moodleform {
             }
         }
 
+        $mform->addElement('html', '<h3>' . get_string('learningplantemplates','tool_lptmanager') . '</h3>');
+
         // Display the table of learning plan templates.
         if (!empty($importer->framework)) {
             $tablehtml = '<table class="generaltable">';
