@@ -261,8 +261,8 @@ class lp_importer {
      * @param competency_framework $framework
      */
 
-    public function create_learning_plan_template($workrole) {
-        global $DB;
+     public function create_learning_plan_template($workrole) {
+        global $DB, $OUTPUT;
     
         // Use the `contextid` initialized in the constructor.
         $contextid = $this->contextid;
@@ -272,6 +272,10 @@ class lp_importer {
         foreach ($templates as $template) {
             if ($workrole->shortname === $template->get('shortname')) {
                 debugging("Template with shortname '{$workrole->shortname}' already exists", DEBUG_DEVELOPER);
+                echo $OUTPUT->notification(
+                    "A template with the shortname '{$workrole->shortname}' already exists.",
+                    'notifywarning'
+                );
                 return;
             }
         }
@@ -284,7 +288,14 @@ class lp_importer {
     
         // Call the API to create the learning plan template.
         $lp = api::create_template($record);
-    
+        global $OUTPUT;
+
+        echo $OUTPUT->notification(
+            "Learning plan template '{$workrole->shortname}' created successfully.",
+            'notifysuccess'
+        );
+        echo $OUTPUT->notification(get_string('learningplansimported', 'tool_lptmanager'), 'notifysuccess');
+
         // Additional logic for processing competencies (if needed) can be added here.
         debugging("Learning plan template '{$workrole->shortname}' created successfully in context ID {$contextid}", DEBUG_DEVELOPER);
     }
@@ -298,12 +309,18 @@ class lp_importer {
      */
     public function sync_learning_plan_template($workrole) {
         // check for existing template
+        global $OUTPUT;
         $context = context_system::instance();
         $templates = api::list_templates('shortname', 'ASC', null, null, $context);
 
         foreach ($templates as $template) {
             if ($workrole->get('shortname') === $template->get('shortname')) {
                 debugging("template already exists", DEBUG_DEVELOPER);
+                $workroleName = $workrole->get('shortname');
+                echo $OUTPUT->notification(
+                    "A template with the shortname '{$workroleName}' already exists.",
+                    'notifywarning'
+                );
                 // TODO alert user
                 return;
             }

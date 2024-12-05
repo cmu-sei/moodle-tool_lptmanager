@@ -25,7 +25,7 @@ WARRANTY OF FITNESS FOR PURPOSE OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTA
 CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY WARRANTY OF ANY KIND WITH RESPECT TO FREEDOM FROM PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT.
 Licensed under a GNU GENERAL PUBLIC LICENSE - Version 3, 29 June 2007-style license, please see license.txt or contact permission@sei.cmu.edu for full terms.
 
-[DISTRIBUTION STATEMENT A] This material has been approved for public release and unlimited distribution.  Please see Copyright notice for non-US Government use and distribution.
+[DISTRIBUTION STATEMENT A] This material has been approved for public release and unlimited distribution. Please see Copyright notice for non-US Government use and distribution.
 
 This Software includes and/or makes use of Third-Party Software each subject to its own license.
 
@@ -33,11 +33,11 @@ DM24-1177
 */
 
 /**
- * Page to sync a learning plan template as a CSV.
+ * This file contains the form for importing a learning plan template from a file.
  *
- * @package    tool_lptmanager
- * @copyright  2024 Carnegie Mellon University
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @package   tool_lptmanager
+ * @copyright 2024 Carnegie Mellon University
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 require_once(__DIR__ . '/../../../config.php');
@@ -47,58 +47,84 @@ use core_competency\api;
 admin_externalpage_setup('toollpsync');
 
 $pagetitle = get_string('syncnavlink', 'tool_lptmanager');
-
 $context = context_system::instance();
-
 $url = new moodle_url("/admin/tool/lptmanager/sync.php");
 $PAGE->set_context($context);
 $PAGE->set_url($url);
 $PAGE->set_title($pagetitle);
 $PAGE->set_pagelayout('admin');
 
-$form = new \tool_lptmanager\form\sync($url->out(false), array('persistent' => null, 'context' => $context));
+echo $OUTPUT->header();
 
-if ($form->is_cancelled()) {
-    redirect(new moodle_url('/admin/tool/lp/learningplans.php', array('pagecontextid' => $context->id)));
-} else if ($data = $form->get_data()) {
+if (optional_param('confirm', 0, PARAM_BOOL)) {
+    // Step 3: Confirmation form submitted, proceed to sync.
     require_sesskey();
 
-    // TODO should just call functions from lp_importer to create and link learning plan templates/competencies
+    $competencies_json = required_param('competencies', PARAM_RAW);
+    $competencies = json_decode($competencies_json, true);
+
     $syncer = new \tool_lptmanager\lp_importer();
-    
-        // Extract the regex value from the form data
-        $regexvalue = $data->regexvalue;
 
-        // Split the string by dashes
-        $parts = explode('-', $regexvalue);
-
-        // Check if the array has the expected parts
-        if (isset($parts[1])) {
-            $extracted_competency_value = $parts[1];
-        } else {
-            echo "No match found.";
+    foreach ($competencies as $competencyid) {
+        $competency = \core_competency\competency::get_record(['id' => $competencyid]);
+        if ($competency) {
+            $syncer->sync_learning_plan_template($competency);
         }
+    }
 
-        // Define filters for competency search
-        $filters = array();
-    
-        // Get the list of competencies based on the regex filter
+    $urlparams = ['pagecontextid' => $context->id];
+    $frameworksurl = new moodle_url('/admin/tool/lp/learningplans.php', $urlparams);
+    echo $OUTPUT->continue_button($frameworksurl);
+    die();
+
+} else {
+    $form = new \tool_lptmanager\form\sync($url->out(false), ['persistent' => null, 'context' => $context]);
+    if ($form->is_cancelled()) {
+        redirect(new moodle_url('/admin/tool/lp/learningplans.php', ['pagecontextid' => $context->id]));
+    } else if ($data = $form->get_data()) {
+        require_sesskey();
+
+        $regexvalue = $data->regexvalue;
+        $frameworkid = $data->frameworkid;
+
+        // Extract the competency value.
+        $parts = explode('-', $regexvalue);
+        $extracted_competency_value = $parts[1] ?? $regexvalue;
+
+        // Define filters for competency search.
+        $filters = ['competencyframeworkid' => $frameworkid];
+
+        // Get the list of competencies.
         $competencies = api::list_competencies($filters);
-    
-        // Process the competencies as needed
+        $matching_competencies = [];
+
+        // Process the competencies to find matches.
         foreach ($competencies as $competency) {
             $idnumber = $competency->get('idnumber');
             if (strpos($idnumber, $extracted_competency_value) !== false) {
-                $syncer->sync_learning_plan_template($competency);
+                $matching_competencies[] = $competency->get('id');
             }
         }
-    
-        die();
+
+        if (empty($matching_competencies)) {
+            echo $OUTPUT->notification(get_string('nocompetenciesfound', 'tool_lptmanager'), 'notifyproblem');
+            // Display the form again.
+            echo $OUTPUT->heading($pagetitle);
+            $form->display();
+        } else {
+            // Display the confirmation form.
+            $confirm_form = new \tool_lptmanager\form\sync_confirm(null, ['competencies' => $matching_competencies]);
+
+            // Output heading for confirmation.
+            echo $OUTPUT->heading(get_string('confirm_sync_heading', 'tool_lptmanager'));
+
+            $confirm_form->display();
+        }
+    } else {
+        // Step 1: Display the sync form.
+        echo $OUTPUT->heading($pagetitle);
+        $form->display();
+    }
 }
-
-echo $OUTPUT->header();
-echo $OUTPUT->heading($pagetitle);
-
-$form->display();
 
 echo $OUTPUT->footer();

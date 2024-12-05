@@ -85,7 +85,6 @@ if ($form->is_cancelled()) {
 
             $urlparams = ['pagecontextid' => $context->id];
             $frameworksurl = new moodle_url('/admin/tool/lp/learningplans.php', $urlparams);
-            echo $OUTPUT->notification(get_string('learningplansimported', 'tool_lptmanager'), 'notifysuccess');
             echo $OUTPUT->continue_button($frameworksurl);
             die();
         }
