@@ -58,7 +58,6 @@ echo $OUTPUT->header();
 
 if (optional_param('cancel', 0, PARAM_BOOL)) {
     redirect(new moodle_url('/admin/tool/lptmanager/sync.php', ['pagecontextid' => $context->id]));
-    exit(); // Ensure no further code is executed.
 }
 
 if (optional_param('confirm', 0, PARAM_BOOL)) {
