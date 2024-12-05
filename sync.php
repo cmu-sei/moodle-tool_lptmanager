@@ -87,24 +87,20 @@ if (optional_param('confirm', 0, PARAM_BOOL)) {
     } else if ($data = $form->get_data()) {
         require_sesskey();
 
+        // Extract the regex value from the form data
         $regexvalue = $data->regexvalue;
-        $frameworkid = $data->frameworkid;
 
-        // Extract the competency value.
-        $parts = explode('-', $regexvalue);
-        $extracted_competency_value = $parts[1] ?? $regexvalue;
-
-        // Define filters for competency search.
-        $filters = ['competencyframeworkid' => $frameworkid];
-
-        // Get the list of competencies.
+        // Define filters for competency search
+        $filters = array();
+    
+        // Get the list of competencies based on the regex filter
         $competencies = api::list_competencies($filters);
         $matching_competencies = [];
 
         // Process the competencies to find matches.
         foreach ($competencies as $competency) {
             $idnumber = $competency->get('idnumber');
-            if (strpos($idnumber, $extracted_competency_value) !== false) {
+            if (str_contains($idnumber, $regexvalue) !== false) {
                 $matching_competencies[] = $competency->get('id');
             }
         }

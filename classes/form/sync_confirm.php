@@ -72,7 +72,6 @@ DM24-1177
                              </tr>
                          </thead>
                          <tbody>';
- 
          foreach ($competencies as $competencyid) {
              $competency = competency::get_record(['id' => $competencyid]);
              if ($competency) {
