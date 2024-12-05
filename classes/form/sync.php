@@ -58,25 +58,9 @@ class sync extends moodleform {
     public function definition() {
         $mform = $this->_form;
         $context = context_system::instance();
-/*
-	// Get templates
-	$templates = api::list_templates('shortname', 'ASC', null, null, $context);
-        $options = array();
-        foreach ($templates as $template) {
-            $options[$template->get('id')] = $template->get('shortname');
-        }
-        if (empty($options)) {
-            $mform->addElement('static', 'templateid', '', get_string('notemplates', 'tool_lp'));
-        } else {
-            $mform->addElement('select', 'templateid', get_string('listtemplatescaption', 'tool_lp'), $options);
-            $mform->setType('templateid', PARAM_INT);
-            $mform->disabledIf('templateid', 'syncall', 'checked');
-	}
-        $mform->addElement('advcheckbox', 'syncall', get_string('syncall', 'tool_lptmanager'));
-        $mform->setType('syncall', PARAM_BOOL);
-        $mform->addHelpButton('syncall', 'syncall', 'tool_lptmanager');
- */
-	// Get nice frameworks
+
+        $mform->addElement('html', get_string('syncnote','tool_lptmanager'));
+
 	    $frameworks = api::list_frameworks('shortname', 'ASC', null, null, $context);
         $options = array(); 
             foreach ($frameworks as $framework) {
