@@ -64,7 +64,6 @@ if (optional_param('cancel', 0, PARAM_BOOL)) {
 if (optional_param('confirm', 0, PARAM_BOOL)) {
     // Step 3: Confirmation form submitted, proceed to sync.
     require_sesskey();
-    echo 'test';
     $competencies_json = required_param('competencies', PARAM_RAW);
     $competencies = json_decode($competencies_json, true);
 
@@ -128,7 +127,6 @@ if (optional_param('confirm', 0, PARAM_BOOL)) {
     } else {
         // Step 1: Display the sync form.
         echo $OUTPUT->heading($pagetitle);
-        $form = new \tool_lptmanager\form\sync($url->out(false), array('persistent' => null, 'context' => $context));
         $form->display();
     }
 }
