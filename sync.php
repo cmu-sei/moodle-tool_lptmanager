@@ -56,10 +56,13 @@ $PAGE->set_pagelayout('admin');
 
 echo $OUTPUT->header();
 
+if (optional_param('cancel', 0, PARAM_BOOL)) {
+    redirect(new moodle_url('/admin/tool/lptmanager/sync.php', ['pagecontextid' => $context->id]));
+}
+
 if (optional_param('confirm', 0, PARAM_BOOL)) {
     // Step 3: Confirmation form submitted, proceed to sync.
     require_sesskey();
-
     $competencies_json = required_param('competencies', PARAM_RAW);
     $competencies = json_decode($competencies_json, true);
 
