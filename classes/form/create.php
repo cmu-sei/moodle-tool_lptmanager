@@ -33,7 +33,7 @@ DM24-1177
 */
 
 /**
- * This file contains the form sync a learning plan template.
+ * This file contains the form create a learning plan template.
  *
  * @package   tool_lptmanager
  * @copyright 2024 Carnegie Mellon University
@@ -50,7 +50,7 @@ use core_competency\api;
 
 require_once($CFG->libdir.'/formslib.php');
 
-class sync extends moodleform {
+class create extends moodleform {
 
     /**
      * Define the form - called by parent constructor
@@ -59,7 +59,7 @@ class sync extends moodleform {
         $mform = $this->_form;
         $context = context_system::instance();
 
-        $mform->addElement('html', get_string('syncnote','tool_lptmanager'));
+        $mform->addElement('html', get_string('createnote','tool_lptmanager'));
 
 	    $frameworks = api::list_frameworks('shortname', 'ASC', null, null, $context);
         $options = array(); 
@@ -76,7 +76,7 @@ class sync extends moodleform {
             $mform->setType('regexvalue', PARAM_RAW); // Not using PARAM_TEXT as it may strip some regex special characters
             $mform->addRule('regexvalue', null, 'required', null, 'client');
             $mform->addHelpButton('regexvalue', 'competencyname', 'tool_lptmanager');
-            $this->add_action_buttons(true, get_string('sync', 'tool_lptmanager'));
+            $this->add_action_buttons(true, get_string('create', 'tool_lptmanager'));
         }
         
         // regex value should checked inside the competency's idnumber field, ie: WRL inside of CE-WRL-001
