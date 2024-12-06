@@ -44,11 +44,11 @@ require_once(__DIR__ . '/../../../config.php');
 require_once($CFG->libdir.'/adminlib.php');
 use core_competency\api;
 
-admin_externalpage_setup('toollpsync');
+admin_externalpage_setup('toollpcreate');
 
-$pagetitle = get_string('syncnavlink', 'tool_lptmanager');
+$pagetitle = get_string('createnavlink', 'tool_lptmanager');
 $context = context_system::instance();
-$url = new moodle_url("/admin/tool/lptmanager/sync.php");
+$url = new moodle_url("/admin/tool/lptmanager/create.php");
 $PAGE->set_context($context);
 $PAGE->set_url($url);
 $PAGE->set_title($pagetitle);
@@ -57,21 +57,21 @@ $PAGE->set_pagelayout('admin');
 echo $OUTPUT->header();
 
 if (optional_param('cancel', 0, PARAM_BOOL)) {
-    redirect(new moodle_url('/admin/tool/lptmanager/sync.php', ['pagecontextid' => $context->id]));
+    redirect(new moodle_url('/admin/tool/lptmanager/create.php', ['pagecontextid' => $context->id]));
 }
 
 if (optional_param('confirm', 0, PARAM_BOOL)) {
-    // Step 3: Confirmation form submitted, proceed to sync.
+    // Step 3: Confirmation form submitted, proceed to create.
     require_sesskey();
     $competencies_json = required_param('competencies', PARAM_RAW);
     $competencies = json_decode($competencies_json, true);
 
-    $syncer = new \tool_lptmanager\lp_importer();
+    $creator = new \tool_lptmanager\lp_importer();
 
     foreach ($competencies as $competencyid) {
         $competency = \core_competency\competency::get_record(['id' => $competencyid]);
         if ($competency) {
-            $syncer->sync_learning_plan_template($competency);
+            $creator->create_and_link_learning_plan_template($competency);
         }
     }
 
@@ -81,7 +81,7 @@ if (optional_param('confirm', 0, PARAM_BOOL)) {
     die();
 
 } else {
-    $form = new \tool_lptmanager\form\sync($url->out(false), ['persistent' => null, 'context' => $context]);
+    $form = new \tool_lptmanager\form\create($url->out(false), ['persistent' => null, 'context' => $context]);
     if ($form->is_cancelled()) {
         redirect(new moodle_url('/admin/tool/lp/learningplans.php', ['pagecontextid' => $context->id]));
     } else if ($data = $form->get_data()) {
@@ -112,15 +112,15 @@ if (optional_param('confirm', 0, PARAM_BOOL)) {
             $form->display();
         } else {
             // Display the confirmation form.
-            $confirm_form = new \tool_lptmanager\form\sync_confirm(null, ['competencies' => $matching_competencies]);
+            $confirm_form = new \tool_lptmanager\form\create_confirm(null, ['competencies' => $matching_competencies]);
 
             // Output heading for confirmation.
-            echo $OUTPUT->heading(get_string('confirm_sync_heading', 'tool_lptmanager'));
+            echo $OUTPUT->heading(get_string('confirm_create_heading', 'tool_lptmanager'));
 
             $confirm_form->display();
         }
     } else {
-        // Step 1: Display the sync form.
+        // Step 1: Display the create form.
         echo $OUTPUT->heading($pagetitle);
         $form->display();
     }

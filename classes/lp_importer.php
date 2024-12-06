@@ -301,13 +301,13 @@ class lp_importer {
     }
 
     /**
-     * Recursive function to sync and add a competency with all it's children.
+     * Recursive function to create and add a competency with all it's children.
      *
      * @param stdClass $record Raw data for the new competency
      * @param competency $parent
      * @param competency_framework $framework
      */
-    public function sync_learning_plan_template($workrole) {
+    public function create_and_link_learning_plan_template($workrole) {
         // check for existing template
         global $OUTPUT;
         $context = context_system::instance();

@@ -49,7 +49,7 @@ DM24-1177
  
  require_once($CFG->libdir . '/formslib.php');
  
- class sync_confirm extends \moodleform {
+ class create_confirm extends \moodleform {
      public function definition() {
          $mform = $this->_form;
          $competencies = $this->_customdata['competencies'];
@@ -60,7 +60,7 @@ DM24-1177
          $mform->addElement('hidden', 'competencies', json_encode($competencies));
          $mform->setType('competencies', PARAM_RAW);
  
-         $mform->addElement('html', '<div class="alert alert-info">' . get_string('confirm_sync', 'tool_lptmanager') . '</div>');
+         $mform->addElement('html', '<div class="alert alert-info">' . get_string('confirm_create', 'tool_lptmanager') . '</div>');
  
          // Start table.
          $tablehtml = '<table class="generaltable">

@@ -62,11 +62,11 @@ if (get_config('core_competency', 'enabled')) {
     );
     $ADMIN->add('competencies', $temp);
 
-    // Sync learning plan templates page.
+    //Create learning plan templates page.
     $temp = new admin_externalpage(
-        'toollpsync',
-        get_string('syncnavlink', 'tool_lptmanager'),
-        new moodle_url('/admin/tool/lptmanager/sync.php'),
+        'toollpcreate',
+        get_string('createnavlink', 'tool_lptmanager'),
+        new moodle_url('/admin/tool/lptmanager/create.php'),
         'moodle/competency:competencymanage'
     );
     $ADMIN->add('competencies', $temp);
