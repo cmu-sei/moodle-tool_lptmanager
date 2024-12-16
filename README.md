@@ -8,7 +8,7 @@
 - [Usage](#usage)
   - [Importing Learning Plan Templates](#importing-learning-plan-templates)
   - [Exporting Learning Plan Templates](#exporting-learning-plan-templates)
-  - [Syncing Learning Plan Templates](#syncing-learning-plan-templates)
+  - [Creating Learning Plan Templates](#creating-learning-plan-templates)
 - [Future Development](#future-development)
 - [Contributing](#contributing)
 - [License](#license)
@@ -24,8 +24,8 @@ Happy Moodling! 🎓
 The **LPT Manager** plugin in Moodle allows users to:
 
 - Import learning plan templates in CSV format. 
-- Export existing learning plan templates for external use.  
-- Sync learning plan templates with competency frameworks and automatically create learning plan templates.  
+- Export existing learning plan templates for external use.
+- Match learning plan templates with competency frameworks and automatically create learning plan templates.
 
 ## Installation
 
@@ -76,18 +76,18 @@ Once the LPT Manager plugin has been installed, Moodle administrators or Moodle 
 2. Select a learning plan template from the list of learning plans.
 3. Click **Export** and export the one file. Select **Export All Learning Plans** to export all of the available templates instead of just the one.
 
-### Syncing learning plan templates
+### Creating learning plan templates
 
-1. In Moodle, navigate to **Site administration**, **Competencies**, **Sync learning plan templates from competency framework**.
+1. In Moodle, navigate to **Site administration**, **Competencies**, **Create learning plan templates from competency framework**.
 2. Choose a competency framework (e.g., the NICE Workforce Framework) to sync with.
 3. For **Competency Name**, enter the competency name or ID (e.g., DD-WRL-001).
-4. Click **Sync**.  Confirm the sync. The plugin will add cross-referenced competencies to the selected learning plan template.
+4. Click **Create**.  Confirm the creation. The plugin will add cross-referenced competencies to the selected learning plan template.
 
 ### Notes
 
 - **File format**: Ensure .CSV files for import are properly formatted.
 - **Existing templates**: If a learning plan template already exists, the system will notify you: `template already exists`.
-- **Development status**: Some features (e.g., success confirmation pages for sync) may still be under development.
+- **Development status**: Some features (e.g., success confirmation pages) may still be under development.
 
 ## Future Development
 
