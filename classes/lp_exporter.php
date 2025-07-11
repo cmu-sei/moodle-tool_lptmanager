@@ -161,7 +161,7 @@ class lp_exporter {
                     $framework = $competency->get_framework();
                 } else if ($framework->get('id') !== $competency->get('competencyframeworkid')) {
                     debugging("multiple frameworks in learning plan", DEBUG_DEVELOPER);
-                    print_error("multiple frameworks in learning plan: " . $framework->get('id') . " and " . $competency->get('competencyframeworkidnumber'));
+                    debugging("multiple frameworks in learning plan: " . $framework->get('id') . " and " . $competency->get('competencyframeworkidnumber'), DEBUG_DEVELOPER);
                     // TODO throw exception
                 }
                 if ($related === "") {

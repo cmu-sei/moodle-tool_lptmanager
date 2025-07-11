@@ -341,7 +341,7 @@ class lp_importer {
             }
 	}
 	if ($competencyframeworkid === "") {
-            print_error("could not find competencyframeworkid " . $workrole->get('competencyframeworkid'));
+            debugging("could not find competencyframeworkid " . $workrole->get('competencyframeworkid'), DEBUG_DEVELOPER);
 	}
 
     $relatedcompetencies = api::list_related_competencies($workrole->get('id'));
