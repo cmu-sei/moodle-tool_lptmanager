@@ -43,7 +43,7 @@ DM24-1177
 defined('MOODLE_INTERNAL') || die();
 
 
-$plugin->version   = 2025071103; // The current plugin version (Date: YYYYMMDDXX).
+$plugin->version   = 2025081800; // The current plugin version (Date: YYYYMMDDXX).
 $plugin->requires = 2025041400; // Requires this Moodle version.
 $plugin->component = 'tool_lptmanager'; // Full name of the plugin (used for diagnostics).
 $plugin->dependencies = ['tool_lp' => 2024041600];
