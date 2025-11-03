@@ -59,6 +59,9 @@ DM24-1177
  
          $mform->addElement('hidden', 'competencies', json_encode($competencies));
          $mform->setType('competencies', PARAM_RAW);
+
+         $mform->addElement('hidden', 'frameworkid', $this->_customdata['frameworkid'] ?? 0);
+         $mform->setType('frameworkid', PARAM_INT);
  
          $mform->addElement('html', '<div class="alert alert-info">' . get_string('confirm_create', 'tool_lptmanager') . '</div>');
  

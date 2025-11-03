@@ -347,54 +347,78 @@ class lp_importer {
      * @param competency $parent
      * @param competency_framework $framework
      */
-    public function create_and_link_learning_plan_template($workrole) {
+    public function create_and_link_learning_plan_template($workrole, ?int $forcedframeworkid = null) {
         // check for existing template
-        global $OUTPUT;
+        global $DB, $OUTPUT;
+
         $context = context_system::instance();
-        $templates = api::list_templates('shortname', 'ASC', null, null, $context);
 
-        foreach ($templates as $template) {
-            if ($workrole->get('shortname') === $template->get('shortname')) {
-                debugging("template already exists", DEBUG_DEVELOPER);
-                $workroleName = $workrole->get('shortname');
-                echo $OUTPUT->notification(
-                    "A template with the shortname '{$workroleName}' already exists.",
-                    'notifywarning'
-                );
-                // TODO alert user
-                return;
+        // Selected framework
+        $targetfwid = $forcedframeworkid ?? (int)$workrole->get('competencyframeworkid');
+
+        $fwshort = '';
+        foreach (api::list_frameworks('shortname', 'ASC', 0, 0, context_system::instance()) as $fw) {
+            if ((int)$fw->get('id') === $targetfwid) {
+                $fwshort = $fw->get('shortname') ?: $fw->get('idnumber');
+                break;
             }
         }
 
-        // add template
+        $workroleName = $workrole->get('shortname');
+
+        // Does a template with this shortname ALREADY exist for this framework?
+        $existingtplidforthisfw = $DB->get_field_sql(
+            "SELECT t.id
+            FROM {competency_template} t
+            JOIN {competency_templatecomp} tc ON tc.templateid = t.id
+            JOIN {competency} c ON c.id = tc.competencyid
+            WHERE t.shortname = :sn AND c.competencyframeworkid = :fw
+            LIMIT 1",
+            ['sn' => $workroleName, 'fw' => $targetfwid]
+        );
+
+        if ($existingtplidforthisfw) {
+            // Already exists, skip
+            echo $OUTPUT->notification(
+                "Template '{$workroleName}' already exists for framework '{$fwshort}'. Skipping.",
+                'notifyinfo'
+            );
+            return;
+        }
+
         $record = new \stdClass();
-        $record->shortname = $workrole->get('shortname');
+        $record->shortname   = $workroleName;
         $record->description = $workrole->get('description');
-        $record->contextid = 1;
+        $record->contextid   = 1; // system
+
         $lp = api::create_template($record);
+        echo $OUTPUT->notification(
+            "Created learning plan template '{$workroleName}' for framework '{$fwshort}'.",
+            'notifysuccess'
+        );
 
-        $competencyframeworkid = "";
-        $frameworks = api::list_frameworks('shortname', 'ASC', null, null, $context);
-        foreach ($frameworks as $framework) {
-            if ($framework->get('id') === $workrole->get('competencyframeworkid')) {
-                $competencyframeworkid = $framework->get('id');
+        // Link competencies
+        $relatedcompetencies = api::list_related_competencies($workrole->get('id'));
+        foreach ($relatedcompetencies as $related) {
+            $relatedid = $related->get('idnumber');
+            if ($relatedid === '') {
+                continue;
             }
-	}
-	if ($competencyframeworkid === "") {
-            debugging("could not find competencyframeworkid " . $workrole->get('competencyframeworkid'), DEBUG_DEVELOPER);
-	}
-
-    $relatedcompetencies = api::list_related_competencies($workrole->get('id'));
-    foreach ($relatedcompetencies as $related) {
-        $relatedid = $related->get('idnumber');
-        $filters = array('idnumber' => $relatedid, 'competencyframeworkid' => $competencyframeworkid);
-        $competencies = api::list_competencies($filters);
-        foreach ($competencies as $competency) {
-            if ($competency->get('idnumber') === $relatedid) {
-                api::add_competency_to_template($lp->get('id'), $competency->get('id'));
+            $matches = api::list_competencies([
+                'idnumber' => $relatedid,
+                'competencyframeworkid' => $targetfwid
+            ]);
+            foreach ($matches as $competency) {
+                if ($competency->get('idnumber') === $relatedid) {
+                    if (!$DB->record_exists('competency_templatecomp', [
+                        'templateid'   => (int)$lp->get('id'),
+                        'competencyid' => (int)$competency->get('id')
+                    ])) {
+                        api::add_competency_to_template($lp->get('id'), $competency->get('id'));
+                    }
+                }
             }
         }
-    }
     }
 
     /**
