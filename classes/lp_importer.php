@@ -279,15 +279,55 @@ class lp_importer {
                 return;
             }
         }
-    
+
         // Create the learning plan template record.
         $record = new \stdClass();
         $record->shortname = $workrole->shortname;
         $record->description = $workrole->description;
         $record->contextid = $contextid; // Use the stored context ID.
-    
+
         // Call the API to create the learning plan template.
         $lp = api::create_template($record);
+        if (!empty($workrole->relatedidnumbers) && !empty($workrole->competencyframeworkidnumber)) {
+            global $DB;
+
+            // Resolve framework id by idnumber OR shortname.
+            $ctx = \context_system::instance();
+            $frameworkid = null;
+            foreach (api::list_frameworks('shortname', 'ASC', null, null, $ctx) as $fw) {
+                if ($fw->get('idnumber') === $workrole->competencyframeworkidnumber
+                    || $fw->get('shortname') === $workrole->competencyframeworkidnumber) {
+                    $frameworkid = (int)$fw->get('id');
+                    break;
+                }
+            }
+
+            if ($frameworkid) {
+                // Avoid duplicates
+                $already = $DB->get_records_menu(
+                    'competency_templatecomp',
+                    ['templateid' => (int)$lp->get('id')],
+                    '',
+                    'competencyid,competencyid'
+                );
+
+                // Find competencies and link them
+                foreach (array_filter(array_map('trim', explode(',', $workrole->relatedidnumbers))) as $idnum) {
+                    if ($idnum === '') { continue; }
+                    $matches = api::list_competencies(['idnumber' => $idnum, 'competencyframeworkid' => $frameworkid]);
+                    if ($matches) {
+                        $comp = reset($matches);
+                        $cid = (int)$comp->get('id');
+                        if (!isset($already[$cid])) {
+                            api::add_competency_to_template($lp->get('id'), $cid);
+                            $already[$cid] = $cid;
+                        }
+                    }
+                }
+            } else {
+                debugging("Competency framework '{$workrole->competencyframeworkidnumber}' not found", DEBUG_DEVELOPER);
+            }
+        }
         global $OUTPUT;
 
         echo $OUTPUT->notification(
