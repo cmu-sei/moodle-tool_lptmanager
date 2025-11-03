@@ -63,15 +63,17 @@ if (optional_param('cancel', 0, PARAM_BOOL)) {
 if (optional_param('confirm', 0, PARAM_BOOL)) {
     // Step 3: Confirmation form submitted, proceed to create.
     require_sesskey();
+
     $competencies_json = required_param('competencies', PARAM_RAW);
     $competencies = json_decode($competencies_json, true);
+    $frameworkid = required_param('frameworkid', PARAM_INT);
 
     $creator = new \tool_lptmanager\lp_importer();
 
     foreach ($competencies as $competencyid) {
         $competency = \core_competency\competency::get_record(['id' => $competencyid]);
         if ($competency) {
-            $creator->create_and_link_learning_plan_template($competency);
+            $creator->create_and_link_learning_plan_template($competency, $frameworkid);
         }
     }
 
@@ -86,13 +88,17 @@ if (optional_param('confirm', 0, PARAM_BOOL)) {
         redirect(new moodle_url('/admin/tool/lp/learningplans.php', ['pagecontextid' => $context->id]));
     } else if ($data = $form->get_data()) {
         require_sesskey();
+        $frameworkid = !empty($data->frameworkid) ? (int)$data->frameworkid : 0;
 
         // Extract the regex value from the form data
         $regexvalue = $data->regexvalue;
 
         // Define filters for competency search
         $filters = array();
-    
+        if ($frameworkid) {
+            $filters['competencyframeworkid'] = $frameworkid;
+        }
+
         // Get the list of competencies based on the regex filter
         $competencies = api::list_competencies($filters);
         $matching_competencies = [];
@@ -112,7 +118,7 @@ if (optional_param('confirm', 0, PARAM_BOOL)) {
             $form->display();
         } else {
             // Display the confirmation form.
-            $confirm_form = new \tool_lptmanager\form\create_confirm(null, ['competencies' => $matching_competencies]);
+            $confirm_form = new \tool_lptmanager\form\create_confirm(null, ['competencies' => $matching_competencies, 'frameworkid' => $frameworkid]);
 
             // Output heading for confirmation.
             echo $OUTPUT->heading(get_string('confirm_create_heading', 'tool_lptmanager'));
