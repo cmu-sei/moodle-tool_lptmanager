@@ -72,5 +72,37 @@ if (get_config('core_competency', 'enabled')) {
     $ADMIN->add('competencies', $temp);
 }
 
-// No report settings.
-$settings = null;
+    // LRS Competency Sync settings.
+    $settings = new admin_settingpage('tool_lptmanager_settings',
+        get_string('lrssettings', 'tool_lptmanager'));
+
+    $settings->add(new \admin_setting_heading('tool_lptmanager/lrsheading',
+        get_string('lrssettingsheading', 'tool_lptmanager'),
+        get_string('lrssettingsdesc', 'tool_lptmanager')));
+
+    $settings->add(new \admin_setting_configcheckbox('tool_lptmanager/enable_lrs_sync',
+        get_string('enablersksyncsetting', 'tool_lptmanager'),
+        get_string('enablersksyncsetting_desc', 'tool_lptmanager'),
+        0));
+
+    $settings->add(new \admin_setting_configtext('tool_lptmanager/lrs_endpoint',
+        get_string('lrsendpoint', 'tool_lptmanager'),
+        get_string('lrsendpoint_desc', 'tool_lptmanager'),
+        'http://lrsql:9274/xapi'));
+
+    $settings->add(new \admin_setting_configpasswordunmask('tool_lptmanager/lrs_api_key',
+        get_string('lrsapikey', 'tool_lptmanager'),
+        get_string('lrsapikey_desc', 'tool_lptmanager'),
+        ''));
+
+    $settings->add(new \admin_setting_configpasswordunmask('tool_lptmanager/lrs_api_secret',
+        get_string('lrsapisecret', 'tool_lptmanager'),
+        get_string('lrsapisecret_desc', 'tool_lptmanager'),
+        ''));
+
+    $settings->add(new \admin_setting_configtext('tool_lptmanager/competency_iri_prefix',
+        get_string('competencyiriprefix', 'tool_lptmanager'),
+        get_string('competencyiriprefix_desc', 'tool_lptmanager'),
+        'https://niccs.cisa.gov/workforce-development/nice-framework/ksat/'));
+
+    $ADMIN->add('competencies', $settings);
