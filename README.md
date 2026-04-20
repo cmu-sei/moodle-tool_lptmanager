@@ -9,6 +9,7 @@
   - [Importing Learning Plan Templates](#importing-learning-plan-templates)
   - [Exporting Learning Plan Templates](#exporting-learning-plan-templates)
   - [Creating Learning Plan Templates](#creating-learning-plan-templates)
+  - [LRS Competency Sync](#lrs-competency-sync)
 - [Future Development](#future-development)
 - [Contributing](#contributing)
 - [License](#license)
@@ -82,6 +83,27 @@ Once the LPT Manager plugin has been installed, Moodle administrators or Moodle 
 2. Choose a competency framework (e.g., the NICE Workforce Framework) to sync with.
 3. For **Competency Name**, enter the competency name or ID (e.g., DD-WRL-001).
 4. Click **Create**.  Confirm the creation. The plugin will add cross-referenced competencies to the selected learning plan template.
+
+### LRS Competency Sync
+
+The plugin includes a scheduled task that periodically queries an xAPI SQL LRS for TLA MOM competency assertion statements (`asserted` and `validated` verbs) and grades the corresponding competencies in learners' Moodle learning plans.
+
+#### Configuration
+
+1. In Moodle, navigate to **Site administration**, **Plugins**, **Admin tools**, **LRS Competency Sync**.
+2. Enable the **Enable LRS sync** checkbox.
+3. Configure the **LRS endpoint** (e.g., `http://lrsql:9274/xapi`).
+4. Enter the **LRS API key** and **LRS API secret** for Basic authentication.
+5. Set the **Competency IRI prefix** to match how competency identifiers appear in xAPI statement object IRIs (e.g., `https://niccs.cisa.gov/workforce-development/nice-framework/ksat/`). The remainder after stripping this prefix is matched against Moodle competency `idnumber` fields.
+
+#### How it works
+
+- A scheduled task runs every 15 minutes (configurable in **Site administration > Server > Scheduled tasks**).
+- The task fetches xAPI statements with `asserted` or `validated` verbs from the configured LRS.
+- For each statement, it resolves the actor to a Moodle user (via `account.name` matching `user.idnumber`, or `mbox` matching `user.email`).
+- It resolves the xAPI object to a Moodle competency by extracting the competency identifier from the TLA extension or IRI path.
+- It finds the user's learning plan containing that competency and grades it as proficient.
+- Processed statements are recorded in the `tool_lptmanager_lrs_sync` table to prevent duplicate processing.
 
 ### Notes
 
