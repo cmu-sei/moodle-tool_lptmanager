@@ -77,7 +77,6 @@ $string['noframeworks'] = 'No Competency Frameworks Found';
 $string['noframeworks_help'] = 'No competency frameworks are currently available. Please check your competency frameworks settings or add the necessary frameworks to proceed with the create process.';
 $string['competencyname'] = 'Competency Name';
 $string['competencyname_help'] = 'Enter the name or pattern to match competencies by their name.';
-$string['crontask'] = 'Create Learning Plan Templates from Competencies with string WRL';
 $string['usecategory'] = 'Use specific category';
 $string['usecategory_desc'] = 'Use specific category';
 $string['usecategory_desc_help'] = 'Select this option to import the learning plan into a specified course category. If no course category is selected, the default System category will be used.';
