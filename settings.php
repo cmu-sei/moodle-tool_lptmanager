@@ -105,4 +105,9 @@ $settings->add(new \admin_setting_configtext('tool_lptmanager/competency_iri_pre
     get_string('competencyiriprefix_desc', 'tool_lptmanager'),
     'https://niccs.cisa.gov/workforce-development/nice-framework/ksat/'));
 
+$settings->add(new \admin_setting_configtextarea('tool_lptmanager/lrs_sync_frameworks',
+    get_string('lrssyncframeworks', 'tool_lptmanager'),
+    get_string('lrssyncframeworks_desc', 'tool_lptmanager'),
+    ''));
+
 $ADMIN->add('tools', $settings);

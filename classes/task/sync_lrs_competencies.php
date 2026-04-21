@@ -382,6 +382,33 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     }
 
     /**
+     * Get the set of allowed framework IDs from the allowlist setting.
+     *
+     * @return int[]|null Array of allowed framework IDs, or null if all are allowed.
+     */
+    private function get_allowed_framework_ids(): ?array {
+        global $DB;
+
+        $setting = get_config('tool_lptmanager', 'lrs_sync_frameworks');
+        if (empty(trim($setting ?? ''))) {
+            return null;
+        }
+
+        $iris = array_filter(array_map('trim', explode("\n", $setting)));
+        $ids = [];
+        foreach ($iris as $iri) {
+            $fw = $DB->get_record('competency_framework', ['idnumber' => $iri]);
+            if ($fw) {
+                $ids[] = (int) $fw->id;
+            } else {
+                mtrace("Allowlist framework '{$iri}' not found in Moodle.");
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
      * Find and grade a competency by idnumber across all of the user's learning plans.
      *
      * Matches by idnumber rather than competency ID so the correct framework-specific
@@ -401,7 +428,7 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         $result = ['competencyid' => null, 'planid' => null];
         $plans = api::list_user_plans($user->id);
 
-        // Resolve framework ID from the IRI for filtering.
+        // Resolve framework ID from the statement's grouping IRI.
         $frameworkid = null;
         if ($frameworkiri !== null) {
             $fw = $DB->get_record('competency_framework', ['idnumber' => $frameworkiri]);
@@ -412,13 +439,20 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
             }
         }
 
+        // Build the set of allowed framework IDs from the allowlist setting.
+        $allowedframeworkids = $this->get_allowed_framework_ids();
+
         foreach ($plans as $plan) {
             $plancompetencies = api::list_plan_competencies($plan);
             foreach ($plancompetencies as $pc) {
                 if ($pc->competency->get('idnumber') !== $idnumber) {
                     continue;
                 }
-                if ($frameworkid !== null && $pc->competency->get('competencyframeworkid') != $frameworkid) {
+                $compframeworkid = (int) $pc->competency->get('competencyframeworkid');
+                if ($frameworkid !== null && $compframeworkid !== $frameworkid) {
+                    continue;
+                }
+                if ($allowedframeworkids !== null && !in_array($compframeworkid, $allowedframeworkids, true)) {
                     continue;
                 }
                 $competency = $pc->competency;

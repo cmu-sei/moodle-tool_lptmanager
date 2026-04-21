@@ -105,3 +105,5 @@ $string['lrsapisecret'] = 'LRS API secret';
 $string['lrsapisecret_desc'] = 'API secret for authenticating with the SQL LRS xAPI endpoint.';
 $string['competencyiriprefix'] = 'Competency IRI prefix';
 $string['competencyiriprefix_desc'] = 'Prefix to strip from xAPI competency object IRIs to extract the idnumber (e.g., https://niccs.cisa.gov/workforce-development/nice-framework/ksat/). The remainder after stripping is matched against Moodle competency idnumber fields.';
+$string['lrssyncframeworks'] = 'Allowed competency frameworks';
+$string['lrssyncframeworks_desc'] = 'Restrict which competency frameworks the LRS sync is allowed to grade. Enter one framework idnumber (IRI) per line. Only competencies belonging to these frameworks will be graded. Leave empty to allow all frameworks.';
