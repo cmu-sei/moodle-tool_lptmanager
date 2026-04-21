@@ -217,8 +217,19 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
             return false;
         }
 
-        // Extract actor identity.
-        $user = $this->resolve_actor($statement->actor ?? null);
+        // Resolve the learner. For "validated" statements the actor is the instructor;
+        // the learner is in context.extensions. For "asserted" the actor is the learner.
+        $extensions = $statement->context->extensions ?? new \stdClass();
+        if ($verb === self::VERB_VALIDATED) {
+            $learneragent = $extensions->{'https://w3id.org/xapi/tla/extensions/learner'} ?? null;
+            if ($learneragent === null) {
+                mtrace('Validated statement missing learner extension, falling back to actor.');
+                $learneragent = $statement->actor ?? null;
+            }
+        } else {
+            $learneragent = $statement->actor ?? null;
+        }
+        $user = $this->resolve_actor($learneragent);
         if ($user === null) {
             return false;
         }
@@ -233,7 +244,6 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         $planid = $this->grade_competency_in_plans($user, $competency, $statementid);
 
         // Extract Crucible extensions if present.
-        $extensions = $statement->context->extensions ?? new \stdClass();
         $exerciseid = $extensions->{'https://crucible.sei.cmu.edu/xapi/ext/exercise-id'} ?? null;
         $runid = $extensions->{'https://crucible.sei.cmu.edu/xapi/ext/run-id'} ?? null;
 
