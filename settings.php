@@ -88,7 +88,7 @@ $settings->add(new \admin_setting_configcheckbox('tool_lptmanager/enable_lrs_syn
 $settings->add(new \admin_setting_configtext('tool_lptmanager/lrs_endpoint',
     get_string('lrsendpoint', 'tool_lptmanager'),
     get_string('lrsendpoint_desc', 'tool_lptmanager'),
-    'http://lrsql:9274/xapi'));
+    'http://lrsql:9274/xapi', PARAM_URL, 80));
 
 $settings->add(new \admin_setting_configpasswordunmask('tool_lptmanager/lrs_api_key',
     get_string('lrsapikey', 'tool_lptmanager'),
@@ -103,7 +103,7 @@ $settings->add(new \admin_setting_configpasswordunmask('tool_lptmanager/lrs_api_
 $settings->add(new \admin_setting_configtext('tool_lptmanager/competency_iri_prefix',
     get_string('competencyiriprefix', 'tool_lptmanager'),
     get_string('competencyiriprefix_desc', 'tool_lptmanager'),
-    'https://niccs.cisa.gov/workforce-development/nice-framework/ksat/'));
+    'https://niccs.cisa.gov/workforce-development/nice-framework/ksat/', PARAM_URL, 80));
 
 $settings->add(new \admin_setting_configtextarea('tool_lptmanager/lrs_sync_frameworks',
     get_string('lrssyncframeworks', 'tool_lptmanager'),
