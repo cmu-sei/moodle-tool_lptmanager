@@ -246,13 +246,23 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
             return false;
         }
 
+        // Extract the framework IRI from contextActivities.grouping if present.
+        $frameworkiri = $this->extract_framework_iri($statement);
+
         // Find and grade matching competencies across all of the user's learning plans.
-        $result = $this->grade_competency_in_plans($user, $idnumber, $statementid);
+        $result = $this->grade_competency_in_plans($user, $idnumber, $frameworkiri, $statementid);
 
         $competencyid = $result['competencyid'];
         if ($competencyid === null) {
             // Not in any plan — look up a competency record for the sync log.
-            $competencyrecord = $DB->get_record('competency', ['idnumber' => $idnumber]);
+            $conditions = ['idnumber' => $idnumber];
+            if ($frameworkiri !== null) {
+                $fw = $DB->get_record('competency_framework', ['idnumber' => $frameworkiri]);
+                if ($fw) {
+                    $conditions['competencyframeworkid'] = $fw->id;
+                }
+            }
+            $competencyrecord = $DB->get_record('competency', $conditions);
             if (!$competencyrecord) {
                 mtrace("Competency with idnumber '{$idnumber}' not found in Moodle.");
                 return false;
@@ -355,31 +365,67 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     }
 
     /**
+     * Extract the competency framework IRI from contextActivities.grouping.
+     *
+     * @param object $statement The xAPI statement.
+     * @return string|null The framework IRI or null if not present.
+     */
+    private function extract_framework_iri(object $statement): ?string {
+        $grouping = $statement->context->contextActivities->grouping ?? [];
+        foreach ($grouping as $activity) {
+            $type = $activity->definition->type ?? '';
+            if ($type === 'https://w3id.org/xapi/tla/activity-types/competency-framework') {
+                return $activity->id ?? null;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Find and grade a competency by idnumber across all of the user's learning plans.
      *
      * Matches by idnumber rather than competency ID so the correct framework-specific
      * competency is used when the same idnumber exists in multiple frameworks.
+     * When a framework IRI is provided, only competencies from that framework are matched.
      *
      * @param object $user The Moodle user record.
      * @param string $idnumber The competency idnumber from the xAPI statement.
+     * @param string|null $frameworkiri The framework IRI from contextActivities.grouping, or null.
      * @param string $statementid The xAPI statement ID (for evidence note).
      * @return array{competencyid: int|null, planid: int|null} The first matched competency and plan IDs.
      */
     private function grade_competency_in_plans(object $user, string $idnumber,
-            string $statementid): array {
+            ?string $frameworkiri, string $statementid): array {
+        global $DB;
+
         $result = ['competencyid' => null, 'planid' => null];
         $plans = api::list_user_plans($user->id);
+
+        // Resolve framework ID from the IRI for filtering.
+        $frameworkid = null;
+        if ($frameworkiri !== null) {
+            $fw = $DB->get_record('competency_framework', ['idnumber' => $frameworkiri]);
+            if ($fw) {
+                $frameworkid = (int) $fw->id;
+            } else {
+                mtrace("Framework with idnumber '{$frameworkiri}' not found, ignoring framework filter.");
+            }
+        }
 
         foreach ($plans as $plan) {
             $plancompetencies = api::list_plan_competencies($plan);
             foreach ($plancompetencies as $pc) {
-                if ($pc->competency->get('idnumber') === $idnumber) {
-                    $competency = $pc->competency;
-                    $this->grade_competency($plan, $competency, $statementid);
-                    if ($result['competencyid'] === null) {
-                        $result['competencyid'] = $competency->get('id');
-                        $result['planid'] = $plan->get('id');
-                    }
+                if ($pc->competency->get('idnumber') !== $idnumber) {
+                    continue;
+                }
+                if ($frameworkid !== null && $pc->competency->get('competencyframeworkid') != $frameworkid) {
+                    continue;
+                }
+                $competency = $pc->competency;
+                $this->grade_competency($plan, $competency, $statementid);
+                if ($result['competencyid'] === null) {
+                    $result['competencyid'] = $competency->get('id');
+                    $result['planid'] = $plan->get('id');
                 }
             }
         }
