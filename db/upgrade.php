@@ -74,5 +74,34 @@ function xmldb_tool_lptmanager_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026041700, 'tool', 'lptmanager');
     }
 
+    if ($oldversion < 2026042101) {
+        // Ensure the table exists for installs that ran the cleanup branch
+        // (which bumped to 2026041700 before the table was added).
+        $table = new xmldb_table('tool_lptmanager_lrs_sync');
+
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('statementid', XMLDB_TYPE_CHAR, '36', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('competencyid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('planid', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('verb', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('exerciseid', XMLDB_TYPE_CHAR, '36', null, null, null, null);
+        $table->add_field('runid', XMLDB_TYPE_CHAR, '36', null, null, null, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('userid', XMLDB_KEY_FOREIGN, ['userid'], 'user', ['id']);
+        $table->add_key('competencyid', XMLDB_KEY_FOREIGN, ['competencyid'], 'competency', ['id']);
+
+        $table->add_index('statementid', XMLDB_INDEX_UNIQUE, ['statementid']);
+        $table->add_index('userid_competencyid', XMLDB_INDEX_NOTUNIQUE, ['userid', 'competencyid']);
+
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026042101, 'tool', 'lptmanager');
+    }
+
     return true;
 }

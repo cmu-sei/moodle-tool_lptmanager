@@ -47,6 +47,8 @@ use core_competency\api;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once($CFG->libdir . '/filelib.php');
+
 class sync_lrs_competencies extends \core\task\scheduled_task {
 
     /** @var string TLA MOM asserted verb IRI. */
@@ -73,6 +75,10 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
             mtrace('LRS competency sync is disabled.');
             return;
         }
+
+        // The competency API requires an authenticated user context.
+        $admin = get_admin();
+        \core\session\manager::set_user($admin);
 
         $endpoint = get_config('tool_lptmanager', 'lrs_endpoint');
         $apikey = get_config('tool_lptmanager', 'lrs_api_key');
@@ -143,7 +149,7 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         if ($since) {
             $params['since'] = $since;
         }
-        return $endpoint . '/statements?' . http_build_query($params);
+        return $endpoint . '/statements?' . http_build_query($params, '', '&');
     }
 
     /**
@@ -234,14 +240,25 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
             return false;
         }
 
-        // Extract competency from object.
-        $competency = $this->resolve_competency($statement->object ?? null);
-        if ($competency === null) {
+        // Extract competency idnumber from the xAPI object.
+        $idnumber = $this->extract_competency_idnumber($statement->object ?? null);
+        if ($idnumber === null) {
             return false;
         }
 
-        // Find the user's learning plan containing this competency and grade it.
-        $planid = $this->grade_competency_in_plans($user, $competency, $statementid);
+        // Find and grade matching competencies across all of the user's learning plans.
+        $result = $this->grade_competency_in_plans($user, $idnumber, $statementid);
+
+        $competencyid = $result['competencyid'];
+        if ($competencyid === null) {
+            // Not in any plan — look up a competency record for the sync log.
+            $competencyrecord = $DB->get_record('competency', ['idnumber' => $idnumber]);
+            if (!$competencyrecord) {
+                mtrace("Competency with idnumber '{$idnumber}' not found in Moodle.");
+                return false;
+            }
+            $competencyid = (int) $competencyrecord->id;
+        }
 
         // Extract Crucible extensions if present.
         $exerciseid = $extensions->{'https://crucible.sei.cmu.edu/xapi/ext/exercise-id'} ?? null;
@@ -251,8 +268,8 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         $record = new \stdClass();
         $record->statementid = $statementid;
         $record->userid = $user->id;
-        $record->competencyid = $competency->get('id');
-        $record->planid = $planid;
+        $record->competencyid = $competencyid;
+        $record->planid = $result['planid'];
         $record->verb = $verb;
         $record->exerciseid = $exerciseid;
         $record->runid = $runid;
@@ -301,17 +318,12 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     }
 
     /**
-     * Resolve an xAPI activity object to a Moodle competency.
-     *
-     * Extracts the competency identifier from the object's extensions or IRI and
-     * looks it up in Moodle's competency table by idnumber.
+     * Extract a competency idnumber from an xAPI activity object.
      *
      * @param object|null $object The xAPI object.
-     * @return \core_competency\competency|null The Moodle competency or null.
+     * @return string|null The competency idnumber or null.
      */
-    private function resolve_competency(?object $object): ?\core_competency\competency {
-        global $DB;
-
+    private function extract_competency_idnumber(?object $object): ?string {
         if ($object === null) {
             mtrace('Statement has no object.');
             return null;
@@ -339,39 +351,44 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
             return null;
         }
 
-        $record = $DB->get_record('competency', ['idnumber' => $idnumber]);
-        if (!$record) {
-            mtrace("Competency with idnumber '{$idnumber}' not found in Moodle.");
-            return null;
-        }
-
-        return new \core_competency\competency($record->id);
+        return $idnumber;
     }
 
     /**
-     * Find the user's learning plans that contain the given competency and grade it.
+     * Find and grade a competency by idnumber across all of the user's learning plans.
+     *
+     * Matches by idnumber rather than competency ID so the correct framework-specific
+     * competency is used when the same idnumber exists in multiple frameworks.
      *
      * @param object $user The Moodle user record.
-     * @param \core_competency\competency $competency The Moodle competency.
+     * @param string $idnumber The competency idnumber from the xAPI statement.
      * @param string $statementid The xAPI statement ID (for evidence note).
-     * @return int|null The plan ID that was graded, or null if none found.
+     * @return array{competencyid: int|null, planid: int|null} The first matched competency and plan IDs.
      */
-    private function grade_competency_in_plans(object $user, \core_competency\competency $competency,
-            string $statementid): ?int {
+    private function grade_competency_in_plans(object $user, string $idnumber,
+            string $statementid): array {
+        $result = ['competencyid' => null, 'planid' => null];
         $plans = api::list_user_plans($user->id);
 
         foreach ($plans as $plan) {
             $plancompetencies = api::list_plan_competencies($plan);
             foreach ($plancompetencies as $pc) {
-                if ($pc->competency->get('id') == $competency->get('id')) {
+                if ($pc->competency->get('idnumber') === $idnumber) {
+                    $competency = $pc->competency;
                     $this->grade_competency($plan, $competency, $statementid);
-                    return $plan->get('id');
+                    if ($result['competencyid'] === null) {
+                        $result['competencyid'] = $competency->get('id');
+                        $result['planid'] = $plan->get('id');
+                    }
                 }
             }
         }
 
-        mtrace("No learning plan found for user {$user->id} containing competency {$competency->get('idnumber')}.");
-        return null;
+        if ($result['competencyid'] === null) {
+            mtrace("No learning plan found for user {$user->id} containing competency {$idnumber}.");
+        }
+
+        return $result;
     }
 
     /**
