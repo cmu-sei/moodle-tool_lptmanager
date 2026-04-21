@@ -100,9 +100,10 @@ The plugin includes a scheduled task that periodically queries an xAPI SQL LRS f
 
 - A scheduled task runs every 15 minutes (configurable in **Site administration > Server > Scheduled tasks**).
 - The task fetches xAPI statements with `asserted` or `validated` verbs from the configured LRS.
-- For each statement, it resolves the actor to a Moodle user (via `account.name` matching `user.idnumber`, or `mbox` matching `user.email`).
+- For `asserted` statements, the learner is the actor. For `validated` statements (instructor-rated), the learner is resolved from the TLA `learner` context extension.
+- The learner is matched to a Moodle user via `account.name` matching `user.idnumber` (Keycloak sub), or `mbox` matching `user.email`.
 - It resolves the xAPI object to a Moodle competency by extracting the competency identifier from the TLA extension or IRI path.
-- It finds the user's learning plan containing that competency and grades it as proficient.
+- It finds **all** of the user's learning plans containing that competency and grades it as proficient in each one. This provides multi-plan propagation — a competency assertion from any source (Moodle, Crucible exercises, external systems) is applied across all of the learner's plans.
 - Processed statements are recorded in the `tool_lptmanager_lrs_sync` table to prevent duplicate processing.
 
 ### Notes
