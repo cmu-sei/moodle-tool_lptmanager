@@ -108,6 +108,6 @@ $settings->add(new \admin_setting_configtext('tool_lptmanager/competency_iri_pre
 $settings->add(new \admin_setting_configtextarea('tool_lptmanager/lrs_sync_frameworks',
     get_string('lrssyncframeworks', 'tool_lptmanager'),
     get_string('lrssyncframeworks_desc', 'tool_lptmanager'),
-    ''));
+    'https://niccs.cisa.gov/workforce-development-framework/nice-framework-v2.0.0'));
 
 $ADMIN->add('tools', $settings);
