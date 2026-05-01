@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="admin/tool/lptmanager/db" VERSION="20260417" COMMENT="XMLDB file for Moodle admin/tool/lptmanager"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../../lib/xmldb/xmldb.xsd"
+>
+  <TABLES>
+    <TABLE NAME="tool_lptmanager_lrs_sync" COMMENT="Tracks xAPI competency assertion statements synced from SQL LRS to avoid duplicate processing">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="statementid" TYPE="char" LENGTH="36" NOTNULL="true" SEQUENCE="false" COMMENT="xAPI statement UUID"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Moodle user ID"/>
+        <FIELD NAME="competencyid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Moodle competency ID"/>
+        <FIELD NAME="planid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Moodle learning plan ID"/>
+        <FIELD NAME="verb" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false" COMMENT="xAPI verb IRI (asserted or validated)"/>
+        <FIELD NAME="exerciseid" TYPE="char" LENGTH="36" NOTNULL="false" SEQUENCE="false" COMMENT="crucible:exerciseId from the statement"/>
+        <FIELD NAME="runid" TYPE="char" LENGTH="36" NOTNULL="false" SEQUENCE="false" COMMENT="crucible:runId from the statement"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="When this sync record was created"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="userid" TYPE="foreign" FIELDS="userid" REFTABLE="user" REFFIELDS="id"/>
+        <KEY NAME="competencyid" TYPE="foreign" FIELDS="competencyid" REFTABLE="competency" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="statementid" UNIQUE="true" FIELDS="statementid"/>
+        <INDEX NAME="userid_competencyid" UNIQUE="false" FIELDS="userid, competencyid"/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>
