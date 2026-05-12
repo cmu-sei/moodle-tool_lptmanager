@@ -50,7 +50,6 @@ defined('MOODLE_INTERNAL') || die();
 require_once($CFG->libdir . '/filelib.php');
 
 class sync_lrs_competencies extends \core\task\scheduled_task {
-
     /** @var string TLA MOM asserted verb IRI. */
     const VERB_ASSERTED = 'https://w3id.org/xapi/tla/verbs/asserted';
 
@@ -421,8 +420,12 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      * @param string $statementid The xAPI statement ID (for evidence note).
      * @return array{competencyid: int|null, planid: int|null} The first matched competency and plan IDs.
      */
-    private function grade_competency_in_plans(object $user, string $idnumber,
-            ?string $frameworkiri, string $statementid): array {
+    private function grade_competency_in_plans(
+        object $user,
+        string $idnumber,
+        ?string $frameworkiri,
+        string $statementid
+    ): array {
         global $DB;
 
         $result = ['competencyid' => null, 'planid' => null];
@@ -480,8 +483,11 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      * @param \core_competency\competency $competency The competency to grade.
      * @param string $statementid The xAPI statement ID for the evidence note.
      */
-    private function grade_competency(\core_competency\plan $plan,
-            \core_competency\competency $competency, string $statementid): void {
+    private function grade_competency(
+        \core_competency\plan $plan,
+        \core_competency\competency $competency,
+        string $statementid
+    ): void {
         $grade = $this->get_proficient_grade($competency);
         if ($grade === null) {
             mtrace("Could not determine proficient grade for competency {$competency->get('idnumber')}.");

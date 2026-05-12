@@ -19,9 +19,9 @@ Learning Plan Template Manager for Moodle
 
 Copyright 2024 Carnegie Mellon University.
 
-NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS. 
-CARNEGIE MELLON UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS TO ANY MATTER INCLUDING, BUT NOT LIMITED TO, 
-WARRANTY OF FITNESS FOR PURPOSE OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL. 
+NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS.
+CARNEGIE MELLON UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS TO ANY MATTER INCLUDING, BUT NOT LIMITED TO,
+WARRANTY OF FITNESS FOR PURPOSE OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL.
 CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY WARRANTY OF ANY KIND WITH RESPECT TO FREEDOM FROM PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT.
 Licensed under a GNU GENERAL PUBLIC LICENSE - Version 3, 29 June 2007-style license, please see license.txt or contact permission@sei.cmu.edu for full terms.
 
@@ -49,37 +49,36 @@ use core_competency\api;
 use core_text;
 use csv_import_reader;
 
-require_once($CFG->libdir.'/formslib.php');
+require_once($CFG->libdir . '/formslib.php');
 
 class import extends moodleform {
-
     /**
      * Define the form - called by parent constructor
      */
     public function definition() {
         global $CFG, $DB;
         require_once($CFG->libdir . '/csvlib.class.php');
-    
+
         $mform = $this->_form;
-    
+
         // File picker for import file.
-        $mform->addElement('html', get_string('importnote','tool_lptmanager'));
+        $mform->addElement('html', get_string('importnote', 'tool_lptmanager'));
         $element = $mform->createElement('filepicker', 'importfile', get_string('importfile', 'tool_lptmanager'));
         $mform->addElement($element);
         $mform->addHelpButton('importfile', 'importfile', 'tool_lptmanager');
         $mform->addRule('importfile', null, 'required');
         $mform->addElement('hidden', 'confirm', 0);
         $mform->setType('confirm', PARAM_BOOL);
-    
+
         // CSV delimiter and encoding options.
         $choices = csv_import_reader::get_delimiter_list();
         $mform->addElement('select', 'delimiter_name', get_string('csvdelimiter', 'tool_lptmanager'), $choices);
         $mform->setDefault('delimiter_name', array_key_exists('cfg', $choices) ? 'cfg' : 'comma');
-    
+
         $choices = core_text::get_encodings();
         $mform->addElement('select', 'encoding', get_string('encoding', 'tool_lptmanager'), $choices);
         $mform->setDefault('encoding', 'UTF-8');
-    
+
         // Checkbox to decide if importing to a specific category.
         // Add the checkbox element without the description.
         // Add the checkbox element without the description.
@@ -106,5 +105,4 @@ class import extends moodleform {
 
         $mform->setElementError('importfile', $msg);
     }
-
 }
