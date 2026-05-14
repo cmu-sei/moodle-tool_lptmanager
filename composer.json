@@ -1,0 +1,14 @@
+{
+  "name": "cmu-sei/moodle-tool_lptmanager",
+  "description": "Learning plan template manager for Moodle",
+  "type": "moodle-admin",
+  "license": "GPL-3.0-or-later",
+  "require-dev": {
+    "moodlehq/moodle-cs": "^3.6"
+  },
+  "config": {
+    "allow-plugins": {
+      "dealerdirect/phpcodesniffer-composer-installer": true
+    }
+  }
+}

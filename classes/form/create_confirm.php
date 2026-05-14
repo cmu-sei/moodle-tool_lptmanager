@@ -19,9 +19,9 @@ Learning Plan Template Manager for Moodle
 
 Copyright 2024 Carnegie Mellon University.
 
-NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS. 
-CARNEGIE MELLON UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS TO ANY MATTER INCLUDING, BUT NOT LIMITED TO, 
-WARRANTY OF FITNESS FOR PURPOSE OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL. 
+NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS.
+CARNEGIE MELLON UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS TO ANY MATTER INCLUDING, BUT NOT LIMITED TO,
+WARRANTY OF FITNESS FOR PURPOSE OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL.
 CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY WARRANTY OF ANY KIND WITH RESPECT TO FREEDOM FROM PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT.
 Licensed under a GNU GENERAL PUBLIC LICENSE - Version 3, 29 June 2007-style license, please see license.txt or contact permission@sei.cmu.edu for full terms.
 
@@ -43,30 +43,30 @@ DM24-1177
  namespace tool_lptmanager\form;
 
  defined('MOODLE_INTERNAL') || die();
- 
+
  use moodleform;
  use core_competency\competency;
- 
- require_once($CFG->libdir . '/formslib.php');
- 
- class create_confirm extends \moodleform {
-     public function definition() {
-         $mform = $this->_form;
-         $competencies = $this->_customdata['competencies'];
- 
-         $mform->addElement('hidden', 'confirm', 1);
-         $mform->setType('confirm', PARAM_BOOL);
- 
-         $mform->addElement('hidden', 'competencies', json_encode($competencies));
-         $mform->setType('competencies', PARAM_RAW);
 
-         $mform->addElement('hidden', 'frameworkid', $this->_customdata['frameworkid'] ?? 0);
-         $mform->setType('frameworkid', PARAM_INT);
- 
-         $mform->addElement('html', '<div class="alert alert-info">' . get_string('confirm_create', 'tool_lptmanager') . '</div>');
- 
-         // Start table.
-         $tablehtml = '<table class="generaltable">
+ require_once($CFG->libdir . '/formslib.php');
+
+class create_confirm extends \moodleform {
+    public function definition() {
+        $mform = $this->_form;
+        $competencies = $this->_customdata['competencies'];
+
+        $mform->addElement('hidden', 'confirm', 1);
+        $mform->setType('confirm', PARAM_BOOL);
+
+        $mform->addElement('hidden', 'competencies', json_encode($competencies));
+        $mform->setType('competencies', PARAM_RAW);
+
+        $mform->addElement('hidden', 'frameworkid', $this->_customdata['frameworkid'] ?? 0);
+        $mform->setType('frameworkid', PARAM_INT);
+
+        $mform->addElement('html', '<div class="alert alert-info">' . get_string('confirm_create', 'tool_lptmanager') . '</div>');
+
+        // Start table.
+        $tablehtml = '<table class="generaltable">
                          <thead>
                              <tr>
                                  <th>' . get_string('competencyshortname', 'tool_lptmanager') . '</th>
@@ -75,25 +75,25 @@ DM24-1177
                              </tr>
                          </thead>
                          <tbody>';
-         foreach ($competencies as $competencyid) {
-             $competency = competency::get_record(['id' => $competencyid]);
-             if ($competency) {
-                 $shortname = s($competency->get('shortname'));
-                 $idnumber = s($competency->get('idnumber'));
-                 $description = format_text($competency->get('description'), FORMAT_HTML);
- 
-                 $tablehtml .= '<tr>
+        foreach ($competencies as $competencyid) {
+            $competency = competency::get_record(['id' => $competencyid]);
+            if ($competency) {
+                $shortname = s($competency->get('shortname'));
+                $idnumber = s($competency->get('idnumber'));
+                $description = format_text($competency->get('description'), FORMAT_HTML);
+
+                $tablehtml .= '<tr>
                                  <td>' . $shortname . '</td>
                                  <td>' . $idnumber . '</td>
                                  <td>' . $description . '</td>
                                 </tr>';
-             }
-         }
- 
-         $tablehtml .= '</tbody></table>';
- 
-         $mform->addElement('html', $tablehtml);
- 
-         $this->add_action_buttons(true, get_string('confirm', 'tool_lptmanager'));
-     }
- }
+            }
+        }
+
+        $tablehtml .= '</tbody></table>';
+
+        $mform->addElement('html', $tablehtml);
+
+        $this->add_action_buttons(true, get_string('confirm', 'tool_lptmanager'));
+    }
+}

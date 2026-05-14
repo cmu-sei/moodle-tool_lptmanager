@@ -19,9 +19,9 @@ Learning Plan Template Manager for Moodle
 
 Copyright 2024 Carnegie Mellon University.
 
-NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS. 
-CARNEGIE MELLON UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS TO ANY MATTER INCLUDING, BUT NOT LIMITED TO, 
-WARRANTY OF FITNESS FOR PURPOSE OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL. 
+NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS.
+CARNEGIE MELLON UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS TO ANY MATTER INCLUDING, BUT NOT LIMITED TO,
+WARRANTY OF FITNESS FOR PURPOSE OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL.
 CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY WARRANTY OF ANY KIND WITH RESPECT TO FREEDOM FROM PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT.
 Licensed under a GNU GENERAL PUBLIC LICENSE - Version 3, 29 June 2007-style license, please see license.txt or contact permission@sei.cmu.edu for full terms.
 
@@ -53,18 +53,17 @@ use csv_import_reader;
 use core\progress;
 
 class lp_importer {
-
     /** @var string $error The errors message from reading the xml */
     protected $error = '';
 
     /** @var array $flat The flat competencies tree */
-    protected $flat = array();
+    protected $flat = [];
     /** @var array $framework The framework info */
-    protected $framework = array();
-    protected $mappings = array();
+    protected $framework = [];
+    protected $mappings = [];
     protected $importid = 0;
     protected $importer = null;
-    protected $foundheaders = array();
+    protected $foundheaders = [];
     /** @var bool $useprogressbar Control whether importing should use progress bars or not. */
     protected $useprogressbar = false;
     /** @var \core\progress\display_if_slow|null $progress The progress bar instance. */
@@ -94,13 +93,13 @@ class lp_importer {
      * @return array The headers (lang strings)
      */
     public static function list_required_headers() {
-        return array(
+        return [
             get_string('shortname', 'tool_lptmanager'),
             get_string('description', 'tool_lptmanager'),
             get_string('descriptionformat', 'tool_lptmanager'),
             get_string('competencyframeworkidnumber', 'tool_lptmanager'),
             get_string('relatedidnumbers', 'tool_lptmanager'),
-        );
+        ];
     }
 
     /**
@@ -117,21 +116,21 @@ class lp_importer {
      */
     protected function read_mapping_data($data) {
         if ($data) {
-            return array(
+            return [
                 'shortname' => $data->header0,
                 'description' => $data->header1,
                 'descriptionformat' => $data->header2,
                 'competencyframeworkidnumber' => $data->header3,
-                'relatedidnumbers' => $data->header4
-            );
+                'relatedidnumbers' => $data->header4,
+            ];
         } else {
-            return array(
+            return [
                 'shortname' => 0,
                 'description' => 1,
                 'descriptionformat' => 2,
                 'competencyframeworkidnumber' => 3,
-                'relatedidnumbers' => 4
-            );
+                'relatedidnumbers' => 4,
+            ];
         }
     }
 
@@ -157,8 +156,15 @@ class lp_importer {
      * @param array mappingdata The mapping data from the import form.
      * @param bool $useprogressbar Whether progress bar should be displayed, to avoid html output on CLI.
      */
-    public function __construct($text = null, $encoding = null, $delimiter = null, $importid = 0, $mappingdata = null,
-            $useprogressbar = false, $categoryid=null) {
+    public function __construct(
+        $text = null,
+        $encoding = null,
+        $delimiter = null,
+        $importid = 0,
+        $mappingdata = null,
+        $useprogressbar = false,
+        $categoryid = null
+    ) {
 
         global $CFG;
         // The format of our records is:
@@ -169,7 +175,7 @@ class lp_importer {
 
         require_once($CFG->libdir . '/csvlib.class.php');
         $this->categoryid = $categoryid;
-    
+
         // Fetch the contextid for the provided categoryid.
         if (!empty($categoryid)) {
             $context = \context_coursecat::instance($categoryid, IGNORE_MISSING);
@@ -181,7 +187,7 @@ class lp_importer {
         } else {
             $this->contextid = context_system::instance()->id; // Default to system context.
         }
-    
+
         $type = 'competency_template';
 
         if (!$importid) {
@@ -197,7 +203,6 @@ class lp_importer {
                 $this->importer->cleanup();
                 return;
             }
-
         } else {
             $this->importid = $importid;
             $this->importer = new csv_import_reader($this->importid, $type);
@@ -218,7 +223,7 @@ class lp_importer {
         } else {
             // Avoid html output on CLI scripts.
             $this->progress = new \core\progress\none();
-        }   
+        }
 
         // TODO this process bar does not work
         $this->progress->start_progress('');
@@ -261,12 +266,12 @@ class lp_importer {
      * @param competency_framework $framework
      */
 
-     public function create_learning_plan_template($workrole) {
+    public function create_learning_plan_template($workrole) {
         global $DB, $OUTPUT;
-    
+
         // Use the `contextid` initialized in the constructor.
         $contextid = $this->contextid;
-    
+
         // Check if a template with the same shortname already exists in the context.
         $templates = api::list_templates('shortname', 'ASC', null, null, \context::instance_by_id($contextid));
         foreach ($templates as $template) {
@@ -295,8 +300,10 @@ class lp_importer {
             $ctx = \context_system::instance();
             $frameworkid = null;
             foreach (api::list_frameworks('shortname', 'ASC', null, null, $ctx) as $fw) {
-                if ($fw->get('idnumber') === $workrole->competencyframeworkidnumber
-                    || $fw->get('shortname') === $workrole->competencyframeworkidnumber) {
+                if (
+                    $fw->get('idnumber') === $workrole->competencyframeworkidnumber
+                    || $fw->get('shortname') === $workrole->competencyframeworkidnumber
+                ) {
                     $frameworkid = (int)$fw->get('id');
                     break;
                 }
@@ -313,7 +320,9 @@ class lp_importer {
 
                 // Find competencies and link them
                 foreach (array_filter(array_map('trim', explode(',', $workrole->relatedidnumbers))) as $idnum) {
-                    if ($idnum === '') { continue; }
+                    if ($idnum === '') {
+                        continue;
+                    }
                     $matches = api::list_competencies(['idnumber' => $idnum, 'competencyframeworkid' => $frameworkid]);
                     if ($matches) {
                         $comp = reset($matches);
@@ -406,14 +415,16 @@ class lp_importer {
             }
             $matches = api::list_competencies([
                 'idnumber' => $relatedid,
-                'competencyframeworkid' => $targetfwid
+                'competencyframeworkid' => $targetfwid,
             ]);
             foreach ($matches as $competency) {
                 if ($competency->get('idnumber') === $relatedid) {
-                    if (!$DB->record_exists('competency_templatecomp', [
+                    if (
+                        !$DB->record_exists('competency_templatecomp', [
                         'templateid'   => (int)$lp->get('id'),
-                        'competencyid' => (int)$competency->get('id')
-                    ])) {
+                        'competencyid' => (int)$competency->get('id'),
+                        ])
+                    ) {
                         api::add_competency_to_template($lp->get('id'), $competency->get('id'));
                     }
                 }
@@ -432,15 +443,14 @@ class lp_importer {
             $this->progress = new \core\progress\none();
         }
         $this->progress->start_progress('', count($this->framework));
-    
+
         foreach ($this->framework as $record) {
             $record->contextid = $this->contextid; // Pass the fetched contextid.
             $this->create_learning_plan_template($record);
             $this->progress->increment_progress();
         }
         $this->progress->end_progress();
-    
+
         $this->importer->cleanup();
-    }    
-    
+    }
 }

@@ -19,9 +19,9 @@ Learning Plan Template Manager for Moodle
 
 Copyright 2024 Carnegie Mellon University.
 
-NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS. 
-CARNEGIE MELLON UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS TO ANY MATTER INCLUDING, BUT NOT LIMITED TO, 
-WARRANTY OF FITNESS FOR PURPOSE OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL. 
+NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS.
+CARNEGIE MELLON UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS TO ANY MATTER INCLUDING, BUT NOT LIMITED TO,
+WARRANTY OF FITNESS FOR PURPOSE OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL.
 CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY WARRANTY OF ANY KIND WITH RESPECT TO FREEDOM FROM PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT.
 Licensed under a GNU GENERAL PUBLIC LICENSE - Version 3, 29 June 2007-style license, please see license.txt or contact permission@sei.cmu.edu for full terms.
 
@@ -50,7 +50,6 @@ use csv_export_writer;
 use context_system;
 
 class lp_exporter {
-
     /** @var $error string */
     protected $error = '';
     protected $template;
@@ -70,59 +69,59 @@ class lp_exporter {
 
         $this->template = api::read_template($templateid);
 
-	    $writer = new csv_export_writer();
+        $writer = new csv_export_writer();
         $filename = clean_param(preg_replace('/\s+/', '_', $this->template->get('shortname')) . '-' . $this->template->get('id'), PARAM_FILE);
         $writer->set_filename($filename);
         $headers = lp_importer::list_required_headers();
         $writer->add_data($headers);
 
         // Order and number of columns must match lp_importer::list_required_headers().
-        $row = array(
+        $row = [
             $this->template->get('shortname'),
             $this->template->get('description'),
-	    $this->template->get('descriptionformat'),
-        );
+        $this->template->get('descriptionformat'),
+        ];
 
         $competencies = api::list_competencies_in_template($this->template->get('id'));
 
-	$related = "";
-	$framework = "";
+        $related = "";
+        $framework = "";
 
-	foreach ($competencies as $competency) {
-        // Initialize the framework if it's empty.
-        if ($framework === "") {
-            $framework = $competency->get_framework();
-            if (!$framework || !is_object($framework)) {
-                // If no valid framework is found, set framework to null and break.
-                $framework = null;
-                break;
+        foreach ($competencies as $competency) {
+            // Initialize the framework if it's empty.
+            if ($framework === "") {
+                $framework = $competency->get_framework();
+                if (!$framework || !is_object($framework)) {
+                    // If no valid framework is found, set framework to null and break.
+                    $framework = null;
+                    break;
+                }
+            } else if ($framework->get('id') !== $competency->get('competencyframeworkid')) {
+                debugging("multiple frameworks in learning plan", DEBUG_DEVELOPER);
+                throw new \Exception(
+                    "Multiple frameworks in learning plan: " . $framework->get('id') .
+                    " and " . $competency->get('competencyframeworkidnumber')
+                );
             }
-        } else if ($framework->get('id') !== $competency->get('competencyframeworkid')) {
-            debugging("multiple frameworks in learning plan", DEBUG_DEVELOPER);
-            throw new \Exception(
-                "Multiple frameworks in learning plan: " . $framework->get('id') .
-                " and " . $competency->get('competencyframeworkidnumber')
-            );
+
+            // Append competency ID numbers to $related.
+            if ($related === "") {
+                $related = $competency->get('idnumber');
+            } else {
+                $related .= "," . $competency->get('idnumber');
+            }
         }
-    
-        // Append competency ID numbers to $related.
-        if ($related === "") {
-            $related = $competency->get('idnumber');
+
+        // Add framework ID number to the row only if $framework is valid.
+        if ($framework && is_object($framework)) {
+            $row[] = $framework->get('idnumber');
         } else {
-            $related .= "," . $competency->get('idnumber');
+            $row[] = ""; // Leave the framework column empty if no valid framework is found.
         }
-    }
-    
-    // Add framework ID number to the row only if $framework is valid.
-    if ($framework && is_object($framework)) {
-        $row[] = $framework->get('idnumber');
-    } else {
-        $row[] = ""; // Leave the framework column empty if no valid framework is found.
-    }
-    
-    $row[] = $related;
-    $writer->add_data($row);
-    $writer->download_file();    
+
+        $row[] = $related;
+        $writer->add_data($row);
+        $writer->download_file();
     }
 
     /**
@@ -145,16 +144,16 @@ class lp_exporter {
             $this->template = api::read_template($template->get('id'));
 
             // Order and number of columns must match lp_importer::list_required_headers().
-            $row = array(
+            $row = [
                 $this->template->get('shortname'),
                 $this->template->get('description'),
                 $this->template->get('descriptionformat'),
-            );
+            ];
 
             $competencies = api::list_competencies_in_template($this->template->get('id'));
 
-	    $related = "";
-	    $framework = "";
+            $related = "";
+            $framework = "";
 
             foreach ($competencies as $competency) {
                 if ($framework === "") {
