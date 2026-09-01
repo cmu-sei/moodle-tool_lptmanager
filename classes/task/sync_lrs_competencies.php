@@ -49,12 +49,21 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->libdir . '/filelib.php');
 
+/**
+ * Scheduled task that syncs LRS competency statements into Moodle learning plans.
+ */
 class sync_lrs_competencies extends \core\task\scheduled_task {
     /** @var string TLA MOM asserted verb IRI. */
     const VERB_ASSERTED = 'https://w3id.org/xapi/tla/verbs/asserted';
 
     /** @var string TLA MOM validated verb IRI. */
     const VERB_VALIDATED = 'https://w3id.org/xapi/tla/verbs/validated';
+
+    /** @var int Maximum time to establish a connection to the LRS. */
+    const CONNECT_TIMEOUT_SECONDS = 5;
+
+    /** @var int Maximum total duration of an LRS request. */
+    const REQUEST_TIMEOUT_SECONDS = 15;
 
     /**
      * Get a descriptive name for this task.
@@ -91,7 +100,16 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         $lastsync = get_config('tool_lptmanager', 'lrs_last_sync');
 
         $assertedcount = $this->sync_verb($endpoint, $apikey, $apisecret, self::VERB_ASSERTED, $lastsync);
+        if ($assertedcount === null) {
+            mtrace('LRS assertion sync did not complete; retaining the previous sync time.');
+            return;
+        }
+
         $validatedcount = $this->sync_verb($endpoint, $apikey, $apisecret, self::VERB_VALIDATED, $lastsync);
+        if ($validatedcount === null) {
+            mtrace('LRS validation sync did not complete; retaining the previous sync time.');
+            return;
+        }
 
         set_config('lrs_last_sync', date('c'), 'tool_lptmanager');
         mtrace("LRS sync complete. Processed {$assertedcount} asserted, {$validatedcount} validated statements.");
@@ -105,16 +123,16 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      * @param string $apisecret LRS API secret.
      * @param string $verb The verb IRI to query.
      * @param string|false $since ISO 8601 timestamp to fetch statements since, or false.
-     * @return int Number of statements successfully processed.
+     * @return int|null Number of statements successfully processed, or null if the sync did not complete.
      */
-    private function sync_verb(string $endpoint, string $apikey, string $apisecret, string $verb, $since): int {
+    protected function sync_verb(string $endpoint, string $apikey, string $apisecret, string $verb, $since): ?int {
         $count = 0;
         $url = $this->build_query_url($endpoint, $verb, $since);
 
         while ($url) {
             $response = $this->fetch_statements($url, $apikey, $apisecret);
             if ($response === null) {
-                break;
+                return null;
             }
 
             $statements = $response->statements ?? [];
@@ -176,8 +194,14 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      * @param string $apisecret LRS API secret.
      * @return object|null Decoded JSON response or null on failure.
      */
-    private function fetch_statements(string $url, string $apikey, string $apisecret): ?object {
-        $curl = new \curl();
+    protected function fetch_statements(string $url, string $apikey, string $apisecret): ?object {
+        $curl = $this->create_curl();
+        // A scheduled task shares Moodle's cron worker with unrelated work. Do
+        // not allow an unavailable LRS to hold it indefinitely.
+        $curl->setopt([
+            'CURLOPT_CONNECTTIMEOUT' => self::CONNECT_TIMEOUT_SECONDS,
+            'CURLOPT_TIMEOUT' => self::REQUEST_TIMEOUT_SECONDS,
+        ]);
         $curl->setHeader([
             'Authorization: Basic ' . base64_encode($apikey . ':' . $apisecret),
             'X-Experience-API-Version: 1.0.3',
@@ -186,6 +210,11 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
 
         $response = $curl->get($url);
         $httpcode = $curl->get_info()['http_code'] ?? 0;
+
+        if ($curl->get_errno()) {
+            mtrace('LRS request failed: ' . $curl->error);
+            return null;
+        }
 
         if ($httpcode !== 200) {
             mtrace("LRS request failed with HTTP {$httpcode}: " . substr($response, 0, 500));
@@ -199,6 +228,15 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         }
 
         return $decoded;
+    }
+
+    /**
+     * Create the Moodle cURL client used for LRS requests.
+     *
+     * @return \curl
+     */
+    protected function create_curl(): \curl {
+        return new \curl();
     }
 
     /**
