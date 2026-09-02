@@ -62,8 +62,17 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     /** @var int Maximum time to establish a connection to the LRS. */
     const CONNECT_TIMEOUT_SECONDS = 5;
 
-    /** @var int Maximum total duration of an LRS request. */
-    const REQUEST_TIMEOUT_SECONDS = 15;
+    /** @var int Default maximum total duration of an LRS request. */
+    const DEFAULT_REQUEST_TIMEOUT_SECONDS = 15;
+
+    /** @var int Maximum allowed total duration of an LRS request. */
+    const MAX_REQUEST_TIMEOUT_SECONDS = 300;
+
+    /** @var int Default maximum number of LRS pages to process per verb. */
+    const DEFAULT_MAX_PAGES_PER_VERB = 20;
+
+    /** @var int Maximum allowed number of LRS pages to process per verb. */
+    const MAX_PAGES_PER_VERB = 1000;
 
     /**
      * Get a descriptive name for this task.
@@ -98,20 +107,22 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         }
 
         $lastsync = get_config('tool_lptmanager', 'lrs_last_sync');
+        $syncstart = $this->get_sync_start_time();
 
         $assertedcount = $this->sync_verb($endpoint, $apikey, $apisecret, self::VERB_ASSERTED, $lastsync);
+        $validatedcount = $this->sync_verb($endpoint, $apikey, $apisecret, self::VERB_VALIDATED, $lastsync);
+
         if ($assertedcount === null) {
             mtrace('LRS assertion sync did not complete; retaining the previous sync time.');
-            return;
         }
-
-        $validatedcount = $this->sync_verb($endpoint, $apikey, $apisecret, self::VERB_VALIDATED, $lastsync);
         if ($validatedcount === null) {
             mtrace('LRS validation sync did not complete; retaining the previous sync time.');
+        }
+        if ($assertedcount === null || $validatedcount === null) {
             return;
         }
 
-        set_config('lrs_last_sync', date('c'), 'tool_lptmanager');
+        set_config('lrs_last_sync', $syncstart, 'tool_lptmanager');
         mtrace("LRS sync complete. Processed {$assertedcount} asserted, {$validatedcount} validated statements.");
     }
 
@@ -128,21 +139,45 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     protected function sync_verb(string $endpoint, string $apikey, string $apisecret, string $verb, $since): ?int {
         $count = 0;
         $url = $this->build_query_url($endpoint, $verb, $since);
+        $visitedurls = [];
+        $maxpages = $this->get_max_pages_per_verb();
 
-        while ($url) {
+        for ($page = 0; $url; $page++) {
+            if ($page >= $maxpages) {
+                mtrace("LRS sync reached the {$maxpages}-page limit for {$verb}.");
+                return null;
+            }
+            if (isset($visitedurls[$url])) {
+                mtrace("LRS sync detected a repeated pagination URL for {$verb}.");
+                return null;
+            }
+            $visitedurls[$url] = true;
+
             $response = $this->fetch_statements($url, $apikey, $apisecret);
             if ($response === null) {
                 return null;
             }
 
-            $statements = $response->statements ?? [];
+            $statements = $response->statements ?? null;
+            if (!is_array($statements)) {
+                mtrace('LRS response statements must be an array.');
+                return null;
+            }
             foreach ($statements as $statement) {
                 if ($this->process_statement($statement, $verb)) {
                     $count++;
                 }
             }
 
-            $url = !empty($response->more) ? $this->resolve_more_url($endpoint, $response->more) : null;
+            $more = $response->more ?? null;
+            if ($more === null || $more === '') {
+                $url = null;
+            } else if (!is_string($more)) {
+                mtrace('LRS response pagination URL must be a string.');
+                return null;
+            } else {
+                $url = $this->resolve_more_url($endpoint, $more);
+            }
         }
 
         return $count;
@@ -200,7 +235,8 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         // not allow an unavailable LRS to hold it indefinitely.
         $curl->setopt([
             'CURLOPT_CONNECTTIMEOUT' => self::CONNECT_TIMEOUT_SECONDS,
-            'CURLOPT_TIMEOUT' => self::REQUEST_TIMEOUT_SECONDS,
+            'CURLOPT_TIMEOUT' => $this->get_request_timeout_seconds(),
+            'CURLOPT_FOLLOWLOCATION' => false,
         ]);
         $curl->setHeader([
             'Authorization: Basic ' . base64_encode($apikey . ':' . $apisecret),
@@ -222,8 +258,8 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         }
 
         $decoded = json_decode($response);
-        if ($decoded === null) {
-            mtrace('Failed to decode LRS response as JSON.');
+        if (!is_object($decoded)) {
+            mtrace('LRS response must be a JSON object.');
             return null;
         }
 
@@ -237,6 +273,41 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      */
     protected function create_curl(): \curl {
         return new \curl();
+    }
+
+    /**
+     * Get the timestamp saved after a complete sync.
+     *
+     * @return string ISO 8601 timestamp in UTC.
+     */
+    protected function get_sync_start_time(): string {
+        return gmdate('c');
+    }
+
+    /**
+     * Get the configured LRS request timeout within safe bounds.
+     *
+     * @return int Timeout in seconds.
+     */
+    private function get_request_timeout_seconds(): int {
+        $timeout = (int) get_config('tool_lptmanager', 'lrs_request_timeout');
+        if ($timeout < 1) {
+            return self::DEFAULT_REQUEST_TIMEOUT_SECONDS;
+        }
+        return min($timeout, self::MAX_REQUEST_TIMEOUT_SECONDS);
+    }
+
+    /**
+     * Get the configured page limit within safe bounds.
+     *
+     * @return int Maximum pages per verb.
+     */
+    private function get_max_pages_per_verb(): int {
+        $maxpages = (int) get_config('tool_lptmanager', 'lrs_max_pages_per_verb');
+        if ($maxpages < 1) {
+            return self::DEFAULT_MAX_PAGES_PER_VERB;
+        }
+        return min($maxpages, self::MAX_PAGES_PER_VERB);
     }
 
     /**
