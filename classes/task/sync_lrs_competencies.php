@@ -49,12 +49,30 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->libdir . '/filelib.php');
 
+/**
+ * Scheduled task that syncs LRS competency statements into Moodle learning plans.
+ */
 class sync_lrs_competencies extends \core\task\scheduled_task {
     /** @var string TLA MOM asserted verb IRI. */
     const VERB_ASSERTED = 'https://w3id.org/xapi/tla/verbs/asserted';
 
     /** @var string TLA MOM validated verb IRI. */
     const VERB_VALIDATED = 'https://w3id.org/xapi/tla/verbs/validated';
+
+    /** @var int Maximum time to establish a connection to the LRS. */
+    const CONNECT_TIMEOUT_SECONDS = 5;
+
+    /** @var int Default maximum total duration of an LRS request. */
+    const DEFAULT_REQUEST_TIMEOUT_SECONDS = 15;
+
+    /** @var int Maximum allowed total duration of an LRS request. */
+    const MAX_REQUEST_TIMEOUT_SECONDS = 300;
+
+    /** @var int Default maximum number of LRS pages to process per verb. */
+    const DEFAULT_MAX_PAGES_PER_VERB = 20;
+
+    /** @var int Maximum allowed number of LRS pages to process per verb. */
+    const MAX_PAGES_PER_VERB = 1000;
 
     /**
      * Get a descriptive name for this task.
@@ -89,12 +107,30 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         }
 
         $lastsync = get_config('tool_lptmanager', 'lrs_last_sync');
+        $syncstart = $this->get_sync_start_time();
 
-        $assertedcount = $this->sync_verb($endpoint, $apikey, $apisecret, self::VERB_ASSERTED, $lastsync);
-        $validatedcount = $this->sync_verb($endpoint, $apikey, $apisecret, self::VERB_VALIDATED, $lastsync);
+        $asserted = $this->sync_verb($endpoint, $apikey, $apisecret, self::VERB_ASSERTED, $lastsync);
+        $validated = $this->sync_verb($endpoint, $apikey, $apisecret, self::VERB_VALIDATED, $lastsync);
 
-        set_config('lrs_last_sync', date('c'), 'tool_lptmanager');
-        mtrace("LRS sync complete. Processed {$assertedcount} asserted, {$validatedcount} validated statements.");
+        if (!$asserted['complete']) {
+            mtrace('LRS assertion sync did not complete.');
+        }
+        if (!$validated['complete']) {
+            mtrace('LRS validation sync did not complete.');
+        }
+        $checkpoint = $this->get_shared_checkpoint($asserted, $validated, $syncstart);
+        if ($checkpoint === null) {
+            mtrace('LRS sync did not reach a safe shared checkpoint; retaining the previous sync time.');
+            return;
+        }
+
+        set_config('lrs_last_sync', $checkpoint, 'tool_lptmanager');
+        if (!$asserted['complete'] || !$validated['complete']) {
+            mtrace("LRS sync made partial progress through {$checkpoint}. Processed {$asserted['count']} asserted, {$validated['count']} validated statements.");
+            return;
+        }
+
+        mtrace("LRS sync complete. Processed {$asserted['count']} asserted, {$validated['count']} validated statements.");
     }
 
     /**
@@ -105,29 +141,63 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      * @param string $apisecret LRS API secret.
      * @param string $verb The verb IRI to query.
      * @param string|false $since ISO 8601 timestamp to fetch statements since, or false.
-     * @return int Number of statements successfully processed.
+     * @return array{count: int, checkpoint: ?string, complete: bool} Sync result.
      */
-    private function sync_verb(string $endpoint, string $apikey, string $apisecret, string $verb, $since): int {
+    protected function sync_verb(string $endpoint, string $apikey, string $apisecret, string $verb, $since): array {
         $count = 0;
         $url = $this->build_query_url($endpoint, $verb, $since);
+        $visitedurls = [];
+        $maxpages = $this->get_max_pages_per_verb();
+        $checkpoint = null;
 
-        while ($url) {
+        for ($page = 0; $url; $page++) {
+            if ($page >= $maxpages) {
+                mtrace("LRS sync reached the {$maxpages}-page limit for {$verb}.");
+                return $this->create_sync_result($count, $checkpoint, false);
+            }
+            if (isset($visitedurls[$url])) {
+                mtrace("LRS sync detected a repeated pagination URL for {$verb}.");
+                return $this->create_sync_result($count, $checkpoint, false);
+            }
+            $visitedurls[$url] = true;
+
             $response = $this->fetch_statements($url, $apikey, $apisecret);
             if ($response === null) {
-                break;
+                return $this->create_sync_result($count, $checkpoint, false);
             }
 
-            $statements = $response->statements ?? [];
+            $statements = $response->statements ?? null;
+            if (!is_array($statements)) {
+                mtrace('LRS response statements must be an array.');
+                return $this->create_sync_result($count, $checkpoint, false);
+            }
             foreach ($statements as $statement) {
+                if (!is_object($statement)) {
+                    mtrace('LRS statement must be an object.');
+                    return $this->create_sync_result($count, $checkpoint, false);
+                }
                 if ($this->process_statement($statement, $verb)) {
                     $count++;
                 }
+                $stored = $this->get_statement_stored_time($statement);
+                if ($stored === null) {
+                    return $this->create_sync_result($count, $checkpoint, false);
+                }
+                $checkpoint = $stored;
             }
 
-            $url = !empty($response->more) ? $this->resolve_more_url($endpoint, $response->more) : null;
+            $more = $response->more ?? null;
+            if ($more === null || $more === '') {
+                $url = null;
+            } else if (!is_string($more)) {
+                mtrace('LRS response pagination URL must be a string.');
+                return $this->create_sync_result($count, $checkpoint, false);
+            } else {
+                $url = $this->resolve_more_url($endpoint, $more);
+            }
         }
 
-        return $count;
+        return $this->create_sync_result($count, $checkpoint, true);
     }
 
     /**
@@ -176,8 +246,15 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      * @param string $apisecret LRS API secret.
      * @return object|null Decoded JSON response or null on failure.
      */
-    private function fetch_statements(string $url, string $apikey, string $apisecret): ?object {
-        $curl = new \curl();
+    protected function fetch_statements(string $url, string $apikey, string $apisecret): ?object {
+        $curl = $this->create_curl();
+        // A scheduled task shares Moodle's cron worker with unrelated work. Do
+        // not allow an unavailable LRS to hold it indefinitely.
+        $curl->setopt([
+            'CURLOPT_CONNECTTIMEOUT' => self::CONNECT_TIMEOUT_SECONDS,
+            'CURLOPT_TIMEOUT' => $this->get_request_timeout_seconds(),
+            'CURLOPT_MAXREDIRS' => 1,
+        ]);
         $curl->setHeader([
             'Authorization: Basic ' . base64_encode($apikey . ':' . $apisecret),
             'X-Experience-API-Version: 1.0.3',
@@ -187,18 +264,122 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         $response = $curl->get($url);
         $httpcode = $curl->get_info()['http_code'] ?? 0;
 
+        if ($curl->get_errno()) {
+            mtrace('LRS request failed: ' . $curl->error);
+            return null;
+        }
+
         if ($httpcode !== 200) {
             mtrace("LRS request failed with HTTP {$httpcode}: " . substr($response, 0, 500));
             return null;
         }
 
         $decoded = json_decode($response);
-        if ($decoded === null) {
-            mtrace('Failed to decode LRS response as JSON.');
+        if (!is_object($decoded)) {
+            mtrace('LRS response must be a JSON object.');
             return null;
         }
 
         return $decoded;
+    }
+
+    /**
+     * Create the Moodle cURL client used for LRS requests.
+     *
+     * @return \curl
+     */
+    protected function create_curl(): \curl {
+        return new \curl();
+    }
+
+    /**
+     * Get the timestamp saved after a complete sync.
+     *
+     * @return string ISO 8601 timestamp in UTC.
+     */
+    protected function get_sync_start_time(): string {
+        return gmdate('c');
+    }
+
+    /**
+     * Get the safe checkpoint both verb syncs have reached.
+     *
+     * @param array{count: int, checkpoint: ?string, complete: bool} $asserted Asserted sync result.
+     * @param array{count: int, checkpoint: ?string, complete: bool} $validated Validated sync result.
+     * @param string $syncstart Timestamp captured before paging.
+     * @return string|null Checkpoint, or null if progress cannot safely be recorded.
+     */
+    private function get_shared_checkpoint(array $asserted, array $validated, string $syncstart): ?string {
+        $assertedcheckpoint = $asserted['complete'] ? $syncstart : $asserted['checkpoint'];
+        $validatedcheckpoint = $validated['complete'] ? $syncstart : $validated['checkpoint'];
+        if ($assertedcheckpoint === null || $validatedcheckpoint === null) {
+            return null;
+        }
+        return strtotime($assertedcheckpoint) <= strtotime($validatedcheckpoint)
+            ? $assertedcheckpoint
+            : $validatedcheckpoint;
+    }
+
+    /**
+     * Create a result for a verb synchronization.
+     *
+     * @param int $count Number of statements processed.
+     * @param string|null $checkpoint Last safely processed statement timestamp.
+     * @param bool $complete Whether the complete result set was paged.
+     * @return array{count: int, checkpoint: ?string, complete: bool} Sync result.
+     */
+    private function create_sync_result(int $count, ?string $checkpoint, bool $complete): array {
+        return [
+            'count' => $count,
+            'checkpoint' => $checkpoint,
+            'complete' => $complete,
+        ];
+    }
+
+    /**
+     * Get a safe checkpoint timestamp from an LRS statement.
+     *
+     * @param object $statement LRS statement.
+     * @return string|null Timestamp rounded down to whole seconds, or null if unavailable.
+     */
+    private function get_statement_stored_time(object $statement): ?string {
+        $stored = $statement->stored ?? null;
+        if (!is_string($stored) || $stored === '') {
+            mtrace('LRS statement is missing a stored timestamp.');
+            return null;
+        }
+        $timestamp = strtotime($stored);
+        if ($timestamp === false) {
+            mtrace('LRS statement has an invalid stored timestamp.');
+            return null;
+        }
+        return gmdate('c', $timestamp);
+    }
+
+    /**
+     * Get the configured LRS request timeout within safe bounds.
+     *
+     * @return int Timeout in seconds.
+     */
+    private function get_request_timeout_seconds(): int {
+        $timeout = (int) get_config('tool_lptmanager', 'lrs_request_timeout');
+        if ($timeout < 1) {
+            return self::DEFAULT_REQUEST_TIMEOUT_SECONDS;
+        }
+        return min($timeout, self::MAX_REQUEST_TIMEOUT_SECONDS);
+    }
+
+    /**
+     * Get the configured page limit within safe bounds.
+     *
+     * @return int Maximum pages per verb.
+     */
+    private function get_max_pages_per_verb(): int {
+        $maxpages = (int) get_config('tool_lptmanager', 'lrs_max_pages_per_verb');
+        if ($maxpages < 1) {
+            return self::DEFAULT_MAX_PAGES_PER_VERB;
+        }
+        return min($maxpages, self::MAX_PAGES_PER_VERB);
     }
 
     /**
@@ -208,7 +389,7 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      * @param string $verb The verb IRI.
      * @return bool True if the statement was successfully processed.
      */
-    private function process_statement(object $statement, string $verb): bool {
+    protected function process_statement(object $statement, string $verb): bool {
         global $DB;
 
         $statementid = $statement->id ?? null;

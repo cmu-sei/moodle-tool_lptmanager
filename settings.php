@@ -100,6 +100,24 @@ $settings->add(new \admin_setting_configtext(
     80
 ));
 
+$settings->add(new \admin_setting_configtext(
+    'tool_lptmanager/lrs_request_timeout',
+    get_string('lrsrequesttimeout', 'tool_lptmanager'),
+    get_string('lrsrequesttimeout_desc', 'tool_lptmanager'),
+    15,
+    PARAM_INT,
+    4
+));
+
+$settings->add(new \admin_setting_configtext(
+    'tool_lptmanager/lrs_max_pages_per_verb',
+    get_string('lrsmaxpagesperverb', 'tool_lptmanager'),
+    get_string('lrsmaxpagesperverb_desc', 'tool_lptmanager'),
+    20,
+    PARAM_INT,
+    4
+));
+
 $settings->add(new \admin_setting_configpasswordunmask(
     'tool_lptmanager/lrs_api_key',
     get_string('lrsapikey', 'tool_lptmanager'),
