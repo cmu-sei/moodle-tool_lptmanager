@@ -45,6 +45,8 @@ namespace tool_lptmanager\task;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once($CFG->libdir . '/filelib.php');
+
 /**
  * Tests for the LRS competency sync task.
  */
@@ -83,7 +85,7 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         $this->assertEquals([], $response->statements);
         $this->assertSame(5, $options['CURLOPT_CONNECTTIMEOUT']);
         $this->assertSame(20, $options['CURLOPT_TIMEOUT']);
-        $this->assertFalse($options['CURLOPT_FOLLOWLOCATION']);
+        $this->assertSame(1, $options['CURLOPT_MAXREDIRS']);
     }
 
     public function test_fetch_statements_rejects_non_object_json(): void {
@@ -128,11 +130,39 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
             ->getMock();
         $task->expects($this->exactly(2))
             ->method('sync_verb')
-            ->willReturnOnConsecutiveCalls(null, 0);
+            ->willReturnOnConsecutiveCalls(
+                ['count' => 0, 'checkpoint' => null, 'complete' => false],
+                ['count' => 0, 'checkpoint' => null, 'complete' => true]
+            );
 
         $task->execute();
 
         $this->assertSame($lastsync, get_config('tool_lptmanager', 'lrs_last_sync'));
+    }
+
+    public function test_partial_sync_saves_the_shared_safe_checkpoint(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $syncstart = '2026-09-03T12:00:00+00:00';
+        $checkpoint = '2026-09-03T11:30:00+00:00';
+        set_config('enable_lrs_sync', 1, 'tool_lptmanager');
+        set_config('lrs_endpoint', 'https://lrs.example.test/xapi', 'tool_lptmanager');
+        set_config('lrs_api_key', 'key', 'tool_lptmanager');
+        set_config('lrs_api_secret', 'secret', 'tool_lptmanager');
+
+        $task = $this->getMockBuilder(sync_lrs_competencies::class)
+            ->onlyMethods(['get_sync_start_time', 'sync_verb'])
+            ->getMock();
+        $task->method('get_sync_start_time')->willReturn($syncstart);
+        $task->method('sync_verb')->willReturnOnConsecutiveCalls(
+            ['count' => 5, 'checkpoint' => $checkpoint, 'complete' => false],
+            ['count' => 8, 'checkpoint' => null, 'complete' => true]
+        );
+
+        $task->execute();
+
+        $this->assertSame($checkpoint, get_config('tool_lptmanager', 'lrs_last_sync'));
     }
 
     public function test_complete_sync_saves_the_timestamp_captured_before_paging(): void {
@@ -155,9 +185,9 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
                 return $syncstart;
             });
         $task->method('sync_verb')
-            ->willReturnCallback(static function () use (&$events): int {
+            ->willReturnCallback(static function () use (&$events): array {
                 $events[] = 'sync';
-                return 0;
+                return ['count' => 0, 'checkpoint' => null, 'complete' => true];
             });
 
         $task->execute();
@@ -166,23 +196,27 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         $this->assertSame($syncstart, get_config('tool_lptmanager', 'lrs_last_sync'));
     }
 
-    public function test_sync_verb_rejects_repeated_pagination_urls(): void {
+    public function test_sync_verb_records_progress_when_page_limit_is_reached(): void {
         $this->resetAfterTest(true);
-        set_config('lrs_max_pages_per_verb', 20, 'tool_lptmanager');
+        set_config('lrs_max_pages_per_verb', 1, 'tool_lptmanager');
         $response = (object) [
-            'statements' => [],
-            'more' => '/xapi/statements?cursor=repeat',
+            'statements' => [(object) [
+                'id' => 'example-statement',
+                'stored' => '2026-09-03T12:00:00.500Z',
+            ]],
+            'more' => '/xapi/statements?cursor=next',
         ];
 
         $task = $this->getMockBuilder(sync_lrs_competencies::class)
-            ->onlyMethods(['fetch_statements'])
+            ->onlyMethods(['fetch_statements', 'process_statement'])
             ->getMock();
-        $task->expects($this->exactly(2))
+        $task->expects($this->once())
             ->method('fetch_statements')
             ->willReturn($response);
+        $task->method('process_statement')->willReturn(true);
 
         $syncverb = \Closure::bind(
-            static function (sync_lrs_competencies $task): ?int {
+            static function (sync_lrs_competencies $task): array {
                 return $task->sync_verb(
                     'https://lrs.example.test/xapi',
                     'key',
@@ -195,6 +229,9 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
             sync_lrs_competencies::class
         );
 
-        $this->assertNull($syncverb($task));
+        $result = $syncverb($task);
+        $this->assertSame(1, $result['count']);
+        $this->assertSame('2026-09-03T12:00:00+00:00', $result['checkpoint']);
+        $this->assertFalse($result['complete']);
     }
 }

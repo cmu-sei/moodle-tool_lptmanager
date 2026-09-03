@@ -109,21 +109,28 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         $lastsync = get_config('tool_lptmanager', 'lrs_last_sync');
         $syncstart = $this->get_sync_start_time();
 
-        $assertedcount = $this->sync_verb($endpoint, $apikey, $apisecret, self::VERB_ASSERTED, $lastsync);
-        $validatedcount = $this->sync_verb($endpoint, $apikey, $apisecret, self::VERB_VALIDATED, $lastsync);
+        $asserted = $this->sync_verb($endpoint, $apikey, $apisecret, self::VERB_ASSERTED, $lastsync);
+        $validated = $this->sync_verb($endpoint, $apikey, $apisecret, self::VERB_VALIDATED, $lastsync);
 
-        if ($assertedcount === null) {
-            mtrace('LRS assertion sync did not complete; retaining the previous sync time.');
+        if (!$asserted['complete']) {
+            mtrace('LRS assertion sync did not complete.');
         }
-        if ($validatedcount === null) {
-            mtrace('LRS validation sync did not complete; retaining the previous sync time.');
+        if (!$validated['complete']) {
+            mtrace('LRS validation sync did not complete.');
         }
-        if ($assertedcount === null || $validatedcount === null) {
+        $checkpoint = $this->get_shared_checkpoint($asserted, $validated, $syncstart);
+        if ($checkpoint === null) {
+            mtrace('LRS sync did not reach a safe shared checkpoint; retaining the previous sync time.');
             return;
         }
 
-        set_config('lrs_last_sync', $syncstart, 'tool_lptmanager');
-        mtrace("LRS sync complete. Processed {$assertedcount} asserted, {$validatedcount} validated statements.");
+        set_config('lrs_last_sync', $checkpoint, 'tool_lptmanager');
+        if (!$asserted['complete'] || !$validated['complete']) {
+            mtrace("LRS sync made partial progress through {$checkpoint}. Processed {$asserted['count']} asserted, {$validated['count']} validated statements.");
+            return;
+        }
+
+        mtrace("LRS sync complete. Processed {$asserted['count']} asserted, {$validated['count']} validated statements.");
     }
 
     /**
@@ -134,39 +141,49 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      * @param string $apisecret LRS API secret.
      * @param string $verb The verb IRI to query.
      * @param string|false $since ISO 8601 timestamp to fetch statements since, or false.
-     * @return int|null Number of statements successfully processed, or null if the sync did not complete.
+     * @return array{count: int, checkpoint: ?string, complete: bool} Sync result.
      */
-    protected function sync_verb(string $endpoint, string $apikey, string $apisecret, string $verb, $since): ?int {
+    protected function sync_verb(string $endpoint, string $apikey, string $apisecret, string $verb, $since): array {
         $count = 0;
         $url = $this->build_query_url($endpoint, $verb, $since);
         $visitedurls = [];
         $maxpages = $this->get_max_pages_per_verb();
+        $checkpoint = null;
 
         for ($page = 0; $url; $page++) {
             if ($page >= $maxpages) {
                 mtrace("LRS sync reached the {$maxpages}-page limit for {$verb}.");
-                return null;
+                return $this->create_sync_result($count, $checkpoint, false);
             }
             if (isset($visitedurls[$url])) {
                 mtrace("LRS sync detected a repeated pagination URL for {$verb}.");
-                return null;
+                return $this->create_sync_result($count, $checkpoint, false);
             }
             $visitedurls[$url] = true;
 
             $response = $this->fetch_statements($url, $apikey, $apisecret);
             if ($response === null) {
-                return null;
+                return $this->create_sync_result($count, $checkpoint, false);
             }
 
             $statements = $response->statements ?? null;
             if (!is_array($statements)) {
                 mtrace('LRS response statements must be an array.');
-                return null;
+                return $this->create_sync_result($count, $checkpoint, false);
             }
             foreach ($statements as $statement) {
+                if (!is_object($statement)) {
+                    mtrace('LRS statement must be an object.');
+                    return $this->create_sync_result($count, $checkpoint, false);
+                }
                 if ($this->process_statement($statement, $verb)) {
                     $count++;
                 }
+                $stored = $this->get_statement_stored_time($statement);
+                if ($stored === null) {
+                    return $this->create_sync_result($count, $checkpoint, false);
+                }
+                $checkpoint = $stored;
             }
 
             $more = $response->more ?? null;
@@ -174,13 +191,13 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
                 $url = null;
             } else if (!is_string($more)) {
                 mtrace('LRS response pagination URL must be a string.');
-                return null;
+                return $this->create_sync_result($count, $checkpoint, false);
             } else {
                 $url = $this->resolve_more_url($endpoint, $more);
             }
         }
 
-        return $count;
+        return $this->create_sync_result($count, $checkpoint, true);
     }
 
     /**
@@ -236,7 +253,7 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         $curl->setopt([
             'CURLOPT_CONNECTTIMEOUT' => self::CONNECT_TIMEOUT_SECONDS,
             'CURLOPT_TIMEOUT' => $this->get_request_timeout_seconds(),
-            'CURLOPT_FOLLOWLOCATION' => false,
+            'CURLOPT_MAXREDIRS' => 1,
         ]);
         $curl->setHeader([
             'Authorization: Basic ' . base64_encode($apikey . ':' . $apisecret),
@@ -285,6 +302,61 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     }
 
     /**
+     * Get the safe checkpoint both verb syncs have reached.
+     *
+     * @param array{count: int, checkpoint: ?string, complete: bool} $asserted Asserted sync result.
+     * @param array{count: int, checkpoint: ?string, complete: bool} $validated Validated sync result.
+     * @param string $syncstart Timestamp captured before paging.
+     * @return string|null Checkpoint, or null if progress cannot safely be recorded.
+     */
+    private function get_shared_checkpoint(array $asserted, array $validated, string $syncstart): ?string {
+        $assertedcheckpoint = $asserted['complete'] ? $syncstart : $asserted['checkpoint'];
+        $validatedcheckpoint = $validated['complete'] ? $syncstart : $validated['checkpoint'];
+        if ($assertedcheckpoint === null || $validatedcheckpoint === null) {
+            return null;
+        }
+        return strtotime($assertedcheckpoint) <= strtotime($validatedcheckpoint)
+            ? $assertedcheckpoint
+            : $validatedcheckpoint;
+    }
+
+    /**
+     * Create a result for a verb synchronization.
+     *
+     * @param int $count Number of statements processed.
+     * @param string|null $checkpoint Last safely processed statement timestamp.
+     * @param bool $complete Whether the complete result set was paged.
+     * @return array{count: int, checkpoint: ?string, complete: bool} Sync result.
+     */
+    private function create_sync_result(int $count, ?string $checkpoint, bool $complete): array {
+        return [
+            'count' => $count,
+            'checkpoint' => $checkpoint,
+            'complete' => $complete,
+        ];
+    }
+
+    /**
+     * Get a safe checkpoint timestamp from an LRS statement.
+     *
+     * @param object $statement LRS statement.
+     * @return string|null Timestamp rounded down to whole seconds, or null if unavailable.
+     */
+    private function get_statement_stored_time(object $statement): ?string {
+        $stored = $statement->stored ?? null;
+        if (!is_string($stored) || $stored === '') {
+            mtrace('LRS statement is missing a stored timestamp.');
+            return null;
+        }
+        $timestamp = strtotime($stored);
+        if ($timestamp === false) {
+            mtrace('LRS statement has an invalid stored timestamp.');
+            return null;
+        }
+        return gmdate('c', $timestamp);
+    }
+
+    /**
      * Get the configured LRS request timeout within safe bounds.
      *
      * @return int Timeout in seconds.
@@ -317,7 +389,7 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      * @param string $verb The verb IRI.
      * @return bool True if the statement was successfully processed.
      */
-    private function process_statement(object $statement, string $verb): bool {
+    protected function process_statement(object $statement, string $verb): bool {
         global $DB;
 
         $statementid = $statement->id ?? null;
