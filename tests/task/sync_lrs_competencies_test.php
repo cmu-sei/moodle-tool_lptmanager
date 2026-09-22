@@ -43,113 +43,102 @@ DM24-1177
 
 namespace tool_lptmanager\task;
 
-defined('MOODLE_INTERNAL') || die();
-
-global $CFG;
-require_once($CFG->libdir . '/filelib.php');
+use core\http_client;
+use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Promise\PromiseInterface;
+use GuzzleHttp\Psr7\Response;
+use GuzzleHttp\RequestOptions;
+use Psr\Http\Message\RequestInterface;
 
 /**
  * Tests for the LRS competency sync task.
  */
 final class sync_lrs_competencies_test extends \advanced_testcase {
+    /**
+     * Build a task whose HTTP client answers with a canned response.
+     *
+     * @param int $status Status code to answer with.
+     * @param string $body Body to answer with.
+     * @param array $captured Receives the outgoing request and its resolved options.
+     * @return sync_lrs_competencies
+     */
+    private function create_task_answering(int $status, string $body, array &$captured): sync_lrs_competencies {
+        $response = new Response($status, [], $body);
+        $handler = static function (RequestInterface $request, array $options) use ($response, &$captured): PromiseInterface {
+            $captured = ['request' => $request, 'options' => $options];
+            return Create::promiseFor($response);
+        };
+
+        $task = $this->getMockBuilder(sync_lrs_competencies::class)
+            ->onlyMethods(['create_client'])
+            ->getMock();
+        $task->method('create_client')->willReturn(new http_client(['mock' => $handler]));
+
+        return $task;
+    }
+
+    /**
+     * Call the protected fetch_statements() on a task.
+     *
+     * @param sync_lrs_competencies $task Task to call.
+     * @return object|null Decoded response.
+     */
+    private function fetch_statements(sync_lrs_competencies $task): ?object {
+        $fetchstatements = \Closure::bind(
+            static function (sync_lrs_competencies $task): ?object {
+                return $task->fetch_statements('https://lrs.example.test/xapi/statements', 'key', 'secret');
+            },
+            null,
+            sync_lrs_competencies::class
+        );
+        return $fetchstatements($task);
+    }
+
     public function test_fetch_statements_configures_bounded_timeouts(): void {
         $this->resetAfterTest(true);
         set_config('lrs_request_timeout', 20, 'tool_lptmanager');
-        $curl = $this->getMockBuilder(\curl::class)
-            ->disableOriginalConstructor()
-            ->onlyMethods(['setopt', 'setHeader', 'get', 'get_info', 'get_errno'])
-            ->getMock();
-        $options = [];
-        $curl->expects($this->once())
-            ->method('setopt')
-            ->willReturnCallback(static function (array $curloptions) use (&$options): void {
-                $options = $curloptions;
-            });
-        $curl->method('get')->willReturn('{"statements": []}');
-        $curl->method('get_info')->willReturn(['http_code' => 200]);
-        $curl->method('get_errno')->willReturn(0);
+        $captured = [];
+        $task = $this->create_task_answering(200, '{"statements": []}', $captured);
 
-        $task = $this->getMockBuilder(sync_lrs_competencies::class)
-            ->onlyMethods(['create_curl'])
-            ->getMock();
-        $task->method('create_curl')->willReturn($curl);
-
-        $fetchstatements = \Closure::bind(
-            static function (sync_lrs_competencies $task): ?object {
-                return $task->fetch_statements('https://lrs.example.test/xapi/statements', 'key', 'secret');
-            },
-            null,
-            sync_lrs_competencies::class
-        );
-        $response = $fetchstatements($task);
+        $response = $this->fetch_statements($task);
 
         $this->assertEquals([], $response->statements);
-        $this->assertSame(5, $options['CURLOPT_CONNECTTIMEOUT']);
-        $this->assertSame(20, $options['CURLOPT_TIMEOUT']);
+        $this->assertSame(5, $captured['options'][RequestOptions::CONNECT_TIMEOUT]);
+        $this->assertSame(20, $captured['options'][RequestOptions::TIMEOUT]);
     }
 
-    public function test_fetch_statements_refuses_to_follow_redirects_or_unverified_peers(): void {
+    public function test_fetch_statements_verifies_the_peer_certificate(): void {
         $this->resetAfterTest(true);
-        $curl = $this->getMockBuilder(\curl::class)
-            ->disableOriginalConstructor()
-            ->onlyMethods(['setopt', 'setHeader', 'get', 'get_info', 'get_errno'])
-            ->getMock();
-        $options = [];
-        $curl->expects($this->once())
-            ->method('setopt')
-            ->willReturnCallback(static function (array $curloptions) use (&$options): void {
-                $options = $curloptions;
-            });
-        $curl->method('get')->willReturn('{"statements": []}');
-        $curl->method('get_info')->willReturn(['http_code' => 200]);
-        $curl->method('get_errno')->willReturn(0);
+        $captured = [];
+        $task = $this->create_task_answering(200, '{"statements": []}', $captured);
 
-        $task = $this->getMockBuilder(sync_lrs_competencies::class)
-            ->onlyMethods(['create_curl'])
-            ->getMock();
-        $task->method('create_curl')->willReturn($curl);
+        $this->fetch_statements($task);
 
-        $fetchstatements = \Closure::bind(
-            static function (sync_lrs_competencies $task): ?object {
-                return $task->fetch_statements('https://lrs.example.test/xapi/statements', 'key', 'secret');
-            },
-            null,
-            sync_lrs_competencies::class
+        // The request carries the LRS credentials in an Authorization header, so an unverified peer
+        // would expose them to anyone on the path. Verification is core's default; this guards
+        // against the plugin ever passing an option that turns it off.
+        $this->assertTrue($captured['options'][RequestOptions::VERIFY]);
+        $this->assertSame(
+            'Basic ' . base64_encode('key:secret'),
+            $captured['request']->getHeaderLine('Authorization')
         );
-        $fetchstatements($task);
+    }
 
-        // The request carries the LRS credentials in an Authorization header. A followed redirect
-        // would replay that header on a host of the response's choosing, and an unverified peer
-        // would expose it to anyone on the path.
-        $this->assertSame(0, $options['CURLOPT_FOLLOWLOCATION']);
-        $this->assertSame(0, $options['CURLOPT_MAXREDIRS']);
-        $this->assertSame(1, $options['CURLOPT_SSL_VERIFYPEER']);
+    public function test_fetch_statements_reports_an_error_status_without_throwing(): void {
+        $this->resetAfterTest(true);
+        $captured = [];
+        $task = $this->create_task_answering(500, 'upstream exploded', $captured);
+
+        // A cron task must log and move on, not let a bad gateway abort the run.
+        $this->assertNull($this->fetch_statements($task));
     }
 
     public function test_fetch_statements_rejects_non_object_json(): void {
         $this->resetAfterTest(true);
-        $curl = $this->getMockBuilder(\curl::class)
-            ->disableOriginalConstructor()
-            ->onlyMethods(['setopt', 'setHeader', 'get', 'get_info', 'get_errno'])
-            ->getMock();
-        $curl->method('get')->willReturn('[]');
-        $curl->method('get_info')->willReturn(['http_code' => 200]);
-        $curl->method('get_errno')->willReturn(0);
+        $captured = [];
+        $task = $this->create_task_answering(200, '[]', $captured);
 
-        $task = $this->getMockBuilder(sync_lrs_competencies::class)
-            ->onlyMethods(['create_curl'])
-            ->getMock();
-        $task->method('create_curl')->willReturn($curl);
-
-        $fetchstatements = \Closure::bind(
-            static function (sync_lrs_competencies $task): ?object {
-                return $task->fetch_statements('https://lrs.example.test/xapi/statements', 'key', 'secret');
-            },
-            null,
-            sync_lrs_competencies::class
-        );
-
-        $this->assertNull($fetchstatements($task));
+        $this->assertNull($this->fetch_statements($task));
     }
 
     public function test_failed_sync_attempts_both_verbs_and_retains_last_sync_time(): void {

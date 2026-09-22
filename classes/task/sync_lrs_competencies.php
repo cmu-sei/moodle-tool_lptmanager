@@ -43,11 +43,10 @@ DM24-1177
 
 namespace tool_lptmanager\task;
 
+use core\http_client;
 use core_competency\api;
-
-defined('MOODLE_INTERNAL') || die();
-
-require_once($CFG->libdir . '/filelib.php');
+use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\RequestOptions;
 
 /**
  * Scheduled task that syncs LRS competency statements into Moodle learning plans.
@@ -286,41 +285,34 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      * @return object|null Decoded JSON response or null on failure.
      */
     protected function fetch_statements(string $url, string $apikey, string $apisecret): ?object {
-        $curl = $this->create_curl();
-        // A scheduled task shares Moodle's cron worker with unrelated work. Do
-        // not allow an unavailable LRS to hold it indefinitely.
-        $curl->setopt([
-            'CURLOPT_CONNECTTIMEOUT' => self::CONNECT_TIMEOUT_SECONDS,
-            'CURLOPT_TIMEOUT' => $this->get_request_timeout_seconds(),
-            // A statements endpoint has no reason to redirect, and Moodle's curl wrapper replays a
-            // redirect itself with the instance headers intact, which would hand the Authorization
-            // header below to whatever host the response names.
-            'CURLOPT_FOLLOWLOCATION' => 0,
-            'CURLOPT_MAXREDIRS' => 0,
-            // Moodle's curl wrapper defaults peer verification off. The credentials travel in an
-            // Authorization header, so an unverified peer lets anyone on the path collect them.
-            'CURLOPT_SSL_VERIFYPEER' => 1,
-        ]);
-        $curl->setHeader([
-            'Authorization: Basic ' . base64_encode($apikey . ':' . $apisecret),
-            'X-Experience-API-Version: 1.0.3',
-            'Accept: application/json',
-        ]);
-
-        $response = $curl->get($url);
-        $httpcode = $curl->get_info()['http_code'] ?? 0;
-
-        if ($curl->get_errno()) {
-            mtrace('LRS request failed: ' . $curl->error);
+        try {
+            $response = $this->create_client()->get($url, [
+                // A scheduled task shares Moodle's cron worker with unrelated work. Do
+                // not allow an unavailable LRS to hold it indefinitely.
+                RequestOptions::CONNECT_TIMEOUT => self::CONNECT_TIMEOUT_SECONDS,
+                RequestOptions::TIMEOUT => $this->get_request_timeout_seconds(),
+                // Report an error status through the same path as every other failure here.
+                RequestOptions::HTTP_ERRORS => false,
+                RequestOptions::HEADERS => [
+                    'Authorization' => 'Basic ' . base64_encode($apikey . ':' . $apisecret),
+                    'X-Experience-API-Version' => '1.0.3',
+                    'Accept' => 'application/json',
+                ],
+            ]);
+        } catch (GuzzleException $e) {
+            mtrace('LRS request failed: ' . $e->getMessage());
             return null;
         }
+
+        $httpcode = $response->getStatusCode();
+        $body = (string) $response->getBody();
 
         if ($httpcode !== 200) {
-            mtrace("LRS request failed with HTTP {$httpcode}: " . substr($response, 0, 500));
+            mtrace("LRS request failed with HTTP {$httpcode}: " . substr($body, 0, 500));
             return null;
         }
 
-        $decoded = json_decode($response);
+        $decoded = json_decode($body);
         if (!is_object($decoded)) {
             mtrace('LRS response must be a JSON object.');
             return null;
@@ -330,12 +322,16 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     }
 
     /**
-     * Create the Moodle cURL client used for LRS requests.
+     * Create the HTTP client used for LRS requests.
      *
-     * @return \curl
+     * Core's Guzzle client rather than the older \curl wrapper: the credentials travel in an
+     * Authorization header, and this client verifies the peer certificate by default and drops
+     * that header on a cross-origin redirect. The \curl wrapper does neither.
+     *
+     * @return http_client
      */
-    protected function create_curl(): \curl {
-        return new \curl();
+    protected function create_client(): http_client {
+        return new http_client();
     }
 
     /**
