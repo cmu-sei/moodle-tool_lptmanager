@@ -43,11 +43,10 @@ DM24-1177
 
 namespace tool_lptmanager\task;
 
+use core\http_client;
 use core_competency\api;
-
-defined('MOODLE_INTERNAL') || die();
-
-require_once($CFG->libdir . '/filelib.php');
+use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\RequestOptions;
 
 /**
  * Scheduled task that syncs LRS competency statements into Moodle learning plans.
@@ -73,6 +72,9 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
 
     /** @var int Maximum allowed number of LRS pages to process per verb. */
     const MAX_PAGES_PER_VERB = 1000;
+
+    /** @var int[]|null Framework IDs the sync may grade, or null before the allowlist is read. */
+    private ?array $allowedframeworkids = null;
 
     /**
      * Get a descriptive name for this task.
@@ -194,6 +196,9 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
                 return $this->create_sync_result($count, $checkpoint, false);
             } else {
                 $url = $this->resolve_more_url($endpoint, $more);
+                if ($url === null) {
+                    return $this->create_sync_result($count, $checkpoint, false);
+                }
             }
         }
 
@@ -224,18 +229,51 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     /**
      * Resolve a "more" URL from the LRS response into a full URL.
      *
+     * The xAPI spec defines "more" as a relative IRL, so the usual case is a path resolved against
+     * the configured endpoint. An absolute URL is honoured only when it addresses that same
+     * endpoint: the request carries the LRS key and secret in an Authorization header, so a
+     * hostile or compromised LRS that could name any host here would be handed those credentials.
+     *
      * @param string $endpoint LRS endpoint base URL.
      * @param string $more The more URL or path from the LRS.
-     * @return string
+     * @return string|null Full URL, or null if it does not address the configured endpoint.
      */
-    private function resolve_more_url(string $endpoint, string $more): string {
-        if (strpos($more, 'http') === 0) {
+    private function resolve_more_url(string $endpoint, string $more): ?string {
+        $origin = $this->get_origin(rtrim($endpoint, '/'));
+        if ($origin === null) {
+            mtrace('LRS endpoint is not a valid URL.');
+            return null;
+        }
+
+        // Anything carrying a scheme is treated as absolute, which also rejects non-HTTP schemes:
+        // get_origin() finds no host in them.
+        if (preg_match('|^[a-z][a-z0-9+.\-]*:|i', $more)) {
+            if ($this->get_origin($more) !== $origin) {
+                mtrace("LRS pagination URL does not address the configured endpoint: {$more}");
+                return null;
+            }
             return $more;
         }
-        $parts = parse_url(rtrim($endpoint, '/'));
-        return ($parts['scheme'] ?? 'http') . '://' . ($parts['host'] ?? 'localhost')
-            . (isset($parts['port']) ? ':' . $parts['port'] : '')
-            . $more;
+
+        return $origin . '/' . ltrim($more, '/');
+    }
+
+    /**
+     * Reduce a URL to a comparable scheme://host[:port] origin.
+     *
+     * @param string $url URL to reduce.
+     * @return string|null Lowercased origin, or null if the URL has no host.
+     */
+    private function get_origin(string $url): ?string {
+        $parts = parse_url($url);
+        if (!is_array($parts) || empty($parts['host'])) {
+            return null;
+        }
+        $origin = strtolower($parts['scheme'] ?? 'http') . '://' . strtolower($parts['host']);
+        if (isset($parts['port'])) {
+            $origin .= ':' . (int) $parts['port'];
+        }
+        return $origin;
     }
 
     /**
@@ -247,34 +285,34 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      * @return object|null Decoded JSON response or null on failure.
      */
     protected function fetch_statements(string $url, string $apikey, string $apisecret): ?object {
-        $curl = $this->create_curl();
-        // A scheduled task shares Moodle's cron worker with unrelated work. Do
-        // not allow an unavailable LRS to hold it indefinitely.
-        $curl->setopt([
-            'CURLOPT_CONNECTTIMEOUT' => self::CONNECT_TIMEOUT_SECONDS,
-            'CURLOPT_TIMEOUT' => $this->get_request_timeout_seconds(),
-            'CURLOPT_MAXREDIRS' => 1,
-        ]);
-        $curl->setHeader([
-            'Authorization: Basic ' . base64_encode($apikey . ':' . $apisecret),
-            'X-Experience-API-Version: 1.0.3',
-            'Accept: application/json',
-        ]);
-
-        $response = $curl->get($url);
-        $httpcode = $curl->get_info()['http_code'] ?? 0;
-
-        if ($curl->get_errno()) {
-            mtrace('LRS request failed: ' . $curl->error);
+        try {
+            $response = $this->create_client()->get($url, [
+                // A scheduled task shares Moodle's cron worker with unrelated work. Do
+                // not allow an unavailable LRS to hold it indefinitely.
+                RequestOptions::CONNECT_TIMEOUT => self::CONNECT_TIMEOUT_SECONDS,
+                RequestOptions::TIMEOUT => $this->get_request_timeout_seconds(),
+                // Report an error status through the same path as every other failure here.
+                RequestOptions::HTTP_ERRORS => false,
+                RequestOptions::HEADERS => [
+                    'Authorization' => 'Basic ' . base64_encode($apikey . ':' . $apisecret),
+                    'X-Experience-API-Version' => '1.0.3',
+                    'Accept' => 'application/json',
+                ],
+            ]);
+        } catch (GuzzleException $e) {
+            mtrace('LRS request failed: ' . $e->getMessage());
             return null;
         }
+
+        $httpcode = $response->getStatusCode();
+        $body = (string) $response->getBody();
 
         if ($httpcode !== 200) {
-            mtrace("LRS request failed with HTTP {$httpcode}: " . substr($response, 0, 500));
+            mtrace("LRS request failed with HTTP {$httpcode}: " . substr($body, 0, 500));
             return null;
         }
 
-        $decoded = json_decode($response);
+        $decoded = json_decode($body);
         if (!is_object($decoded)) {
             mtrace('LRS response must be a JSON object.');
             return null;
@@ -284,12 +322,16 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     }
 
     /**
-     * Create the Moodle cURL client used for LRS requests.
+     * Create the HTTP client used for LRS requests.
      *
-     * @return \curl
+     * Core's Guzzle client rather than the older \curl wrapper: the credentials travel in an
+     * Authorization header, and this client verifies the peer certificate by default and drops
+     * that header on a cross-origin redirect. The \curl wrapper does neither.
+     *
+     * @return http_client
      */
-    protected function create_curl(): \curl {
-        return new \curl();
+    protected function create_client(): http_client {
+        return new http_client();
     }
 
     /**
@@ -447,6 +489,14 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
                 mtrace("Competency with idnumber '{$idnumber}' not found in Moodle.");
                 return false;
             }
+            // The allowlist governs the log as well as the grading. When an idnumber exists in both
+            // an allowed and a disallowed framework and the statement named no framework, the
+            // record found here may be the disallowed one; losing a log row is the safe direction.
+            $framework = (int) $competencyrecord->competencyframeworkid;
+            if (!in_array($framework, $this->get_allowed_framework_ids(), true)) {
+                mtrace("Competency '{$idnumber}' is outside the allowed competency frameworks.");
+                return false;
+            }
             $competencyid = (int) $competencyrecord->id;
         }
 
@@ -510,6 +560,11 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     /**
      * Extract a competency idnumber from an xAPI activity object.
      *
+     * The identifier has to be asserted deliberately: either through the TLA extension, or as the
+     * remainder of an object IRI under the configured competency prefix. Reading the last path
+     * segment of any other IRI would let an unrelated activity ending in, say, /T0023 grade
+     * competency T0023, and a competency grade is a credential.
+     *
      * @param object|null $object The xAPI object.
      * @return string|null The competency idnumber or null.
      */
@@ -522,22 +577,34 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         $idnumber = null;
 
         // Try the TLA extension first.
-        if (!empty($object->definition->extensions->{'https://w3id.org/xapi/tla/extensions/competency-identifier'})) {
-            $idnumber = $object->definition->extensions->{'https://w3id.org/xapi/tla/extensions/competency-identifier'};
+        $extension = $object->definition->extensions->{'https://w3id.org/xapi/tla/extensions/competency-identifier'}
+            ?? null;
+        if ($extension !== null && !is_string($extension)) {
+            mtrace('Statement competency identifier extension must be a string.');
+            return null;
+        }
+        if ($extension !== null && trim($extension) !== '') {
+            $idnumber = trim($extension);
         }
 
-        // Fallback: extract from the IRI path (e.g., .../ksat/T0023).
-        if ($idnumber === null && !empty($object->id)) {
+        // Otherwise take the remainder of an object IRI under the configured prefix.
+        if ($idnumber === null && !empty($object->id) && is_string($object->id)) {
             $prefix = get_config('tool_lptmanager', 'competency_iri_prefix');
-            if ($prefix && strpos($object->id, $prefix) === 0) {
-                $idnumber = substr($object->id, strlen($prefix));
-            } else {
-                $idnumber = basename(parse_url($object->id, PHP_URL_PATH));
+            if (empty($prefix) || strpos($object->id, $prefix) !== 0) {
+                mtrace("Statement object '{$object->id}' is not under the configured competency IRI prefix.");
+                return null;
             }
+            $idnumber = trim(substr($object->id, strlen($prefix)), '/');
         }
 
         if (empty($idnumber)) {
             mtrace('Could not extract competency identifier from statement object.');
+            return null;
+        }
+
+        // The remainder has to name one competency, not a path below the prefix.
+        if (strpos($idnumber, '/') !== false) {
+            mtrace("Competency identifier '{$idnumber}' is not a single path segment.");
             return null;
         }
 
@@ -562,19 +629,27 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     }
 
     /**
-     * Get the set of allowed framework IDs from the allowlist setting.
+     * Get the set of framework IDs the sync is allowed to grade.
      *
-     * @return int[]|null Array of allowed framework IDs, or null if all are allowed.
+     * An empty allowlist permits nothing rather than everything. A competency grade is a
+     * credential, and a cleared setting is far more likely an accident than a deliberate decision
+     * to accept assertions against every framework on the site.
+     *
+     * @return int[] Allowed framework IDs, empty if no framework may be graded.
      */
-    private function get_allowed_framework_ids(): ?array {
+    private function get_allowed_framework_ids(): array {
         global $DB;
 
-        $setting = get_config('tool_lptmanager', 'lrs_sync_frameworks');
-        if (empty(trim($setting ?? ''))) {
-            return null;
+        if ($this->allowedframeworkids !== null) {
+            return $this->allowedframeworkids;
         }
 
-        $iris = array_filter(array_map('trim', explode("\n", $setting)));
+        $setting = get_config('tool_lptmanager', 'lrs_sync_frameworks');
+        $iris = array_filter(array_map('trim', explode("\n", (string) $setting)));
+        if (!$iris) {
+            mtrace('No allowed competency frameworks are configured; nothing will be synced.');
+        }
+
         $ids = [];
         foreach ($iris as $iri) {
             $fw = $DB->get_record('competency_framework', ['idnumber' => $iri]);
@@ -585,6 +660,7 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
             }
         }
 
+        $this->allowedframeworkids = $ids;
         return $ids;
     }
 
@@ -636,7 +712,7 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
                 if ($frameworkid !== null && $compframeworkid !== $frameworkid) {
                     continue;
                 }
-                if ($allowedframeworkids !== null && !in_array($compframeworkid, $allowedframeworkids, true)) {
+                if (!in_array($compframeworkid, $allowedframeworkids, true)) {
                     continue;
                 }
                 $competency = $pc->competency;
