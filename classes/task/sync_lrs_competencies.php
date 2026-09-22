@@ -194,6 +194,9 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
                 return $this->create_sync_result($count, $checkpoint, false);
             } else {
                 $url = $this->resolve_more_url($endpoint, $more);
+                if ($url === null) {
+                    return $this->create_sync_result($count, $checkpoint, false);
+                }
             }
         }
 
@@ -224,18 +227,51 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     /**
      * Resolve a "more" URL from the LRS response into a full URL.
      *
+     * The xAPI spec defines "more" as a relative IRL, so the usual case is a path resolved against
+     * the configured endpoint. An absolute URL is honoured only when it addresses that same
+     * endpoint: the request carries the LRS key and secret in an Authorization header, so a
+     * hostile or compromised LRS that could name any host here would be handed those credentials.
+     *
      * @param string $endpoint LRS endpoint base URL.
      * @param string $more The more URL or path from the LRS.
-     * @return string
+     * @return string|null Full URL, or null if it does not address the configured endpoint.
      */
-    private function resolve_more_url(string $endpoint, string $more): string {
-        if (strpos($more, 'http') === 0) {
+    private function resolve_more_url(string $endpoint, string $more): ?string {
+        $origin = $this->get_origin(rtrim($endpoint, '/'));
+        if ($origin === null) {
+            mtrace('LRS endpoint is not a valid URL.');
+            return null;
+        }
+
+        // Anything carrying a scheme is treated as absolute, which also rejects non-HTTP schemes:
+        // get_origin() finds no host in them.
+        if (preg_match('|^[a-z][a-z0-9+.\-]*:|i', $more)) {
+            if ($this->get_origin($more) !== $origin) {
+                mtrace("LRS pagination URL does not address the configured endpoint: {$more}");
+                return null;
+            }
             return $more;
         }
-        $parts = parse_url(rtrim($endpoint, '/'));
-        return ($parts['scheme'] ?? 'http') . '://' . ($parts['host'] ?? 'localhost')
-            . (isset($parts['port']) ? ':' . $parts['port'] : '')
-            . $more;
+
+        return $origin . '/' . ltrim($more, '/');
+    }
+
+    /**
+     * Reduce a URL to a comparable scheme://host[:port] origin.
+     *
+     * @param string $url URL to reduce.
+     * @return string|null Lowercased origin, or null if the URL has no host.
+     */
+    private function get_origin(string $url): ?string {
+        $parts = parse_url($url);
+        if (!is_array($parts) || empty($parts['host'])) {
+            return null;
+        }
+        $origin = strtolower($parts['scheme'] ?? 'http') . '://' . strtolower($parts['host']);
+        if (isset($parts['port'])) {
+            $origin .= ':' . (int) $parts['port'];
+        }
+        return $origin;
     }
 
     /**
@@ -253,7 +289,14 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         $curl->setopt([
             'CURLOPT_CONNECTTIMEOUT' => self::CONNECT_TIMEOUT_SECONDS,
             'CURLOPT_TIMEOUT' => $this->get_request_timeout_seconds(),
-            'CURLOPT_MAXREDIRS' => 1,
+            // A statements endpoint has no reason to redirect, and Moodle's curl wrapper replays a
+            // redirect itself with the instance headers intact, which would hand the Authorization
+            // header below to whatever host the response names.
+            'CURLOPT_FOLLOWLOCATION' => 0,
+            'CURLOPT_MAXREDIRS' => 0,
+            // Moodle's curl wrapper defaults peer verification off. The credentials travel in an
+            // Authorization header, so an unverified peer lets anyone on the path collect them.
+            'CURLOPT_SSL_VERIFYPEER' => 1,
         ]);
         $curl->setHeader([
             'Authorization: Basic ' . base64_encode($apikey . ':' . $apisecret),

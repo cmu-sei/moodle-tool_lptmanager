@@ -86,7 +86,44 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         $this->assertEquals([], $response->statements);
         $this->assertSame(5, $options['CURLOPT_CONNECTTIMEOUT']);
         $this->assertSame(20, $options['CURLOPT_TIMEOUT']);
-        $this->assertSame(1, $options['CURLOPT_MAXREDIRS']);
+    }
+
+    public function test_fetch_statements_refuses_to_follow_redirects_or_unverified_peers(): void {
+        $this->resetAfterTest(true);
+        $curl = $this->getMockBuilder(\curl::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['setopt', 'setHeader', 'get', 'get_info', 'get_errno'])
+            ->getMock();
+        $options = [];
+        $curl->expects($this->once())
+            ->method('setopt')
+            ->willReturnCallback(static function (array $curloptions) use (&$options): void {
+                $options = $curloptions;
+            });
+        $curl->method('get')->willReturn('{"statements": []}');
+        $curl->method('get_info')->willReturn(['http_code' => 200]);
+        $curl->method('get_errno')->willReturn(0);
+
+        $task = $this->getMockBuilder(sync_lrs_competencies::class)
+            ->onlyMethods(['create_curl'])
+            ->getMock();
+        $task->method('create_curl')->willReturn($curl);
+
+        $fetchstatements = \Closure::bind(
+            static function (sync_lrs_competencies $task): ?object {
+                return $task->fetch_statements('https://lrs.example.test/xapi/statements', 'key', 'secret');
+            },
+            null,
+            sync_lrs_competencies::class
+        );
+        $fetchstatements($task);
+
+        // The request carries the LRS credentials in an Authorization header. A followed redirect
+        // would replay that header on a host of the response's choosing, and an unverified peer
+        // would expose it to anyone on the path.
+        $this->assertSame(0, $options['CURLOPT_FOLLOWLOCATION']);
+        $this->assertSame(0, $options['CURLOPT_MAXREDIRS']);
+        $this->assertSame(1, $options['CURLOPT_SSL_VERIFYPEER']);
     }
 
     public function test_fetch_statements_rejects_non_object_json(): void {
@@ -234,5 +271,117 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         $this->assertSame(1, $result['count']);
         $this->assertSame('2026-09-03T12:00:00+00:00', $result['checkpoint']);
         $this->assertFalse($result['complete']);
+    }
+
+    public function test_sync_verb_stops_at_a_pagination_url_on_another_host(): void {
+        $this->resetAfterTest(true);
+        $requested = [];
+        $task = $this->getMockBuilder(sync_lrs_competencies::class)
+            ->onlyMethods(['fetch_statements'])
+            ->getMock();
+        $task->method('fetch_statements')
+            ->willReturnCallback(static function (string $url) use (&$requested): object {
+                $requested[] = $url;
+                return (object) [
+                    'statements' => [],
+                    'more' => 'https://attacker.example.test/xapi/statements?cursor=next',
+                ];
+            });
+
+        $result = $this->run_sync_verb($task);
+
+        // Following this would send the Authorization header, and so the LRS key and secret, to a
+        // host the LRS response picked.
+        $this->assertCount(1, $requested);
+        $this->assertFalse($result['complete']);
+    }
+
+    public function test_sync_verb_stops_at_a_pagination_url_with_a_foreign_scheme(): void {
+        $this->resetAfterTest(true);
+        $requested = [];
+        $task = $this->getMockBuilder(sync_lrs_competencies::class)
+            ->onlyMethods(['fetch_statements'])
+            ->getMock();
+        $task->method('fetch_statements')
+            ->willReturnCallback(static function (string $url) use (&$requested): object {
+                $requested[] = $url;
+                return (object) [
+                    'statements' => [],
+                    'more' => 'file:///etc/passwd',
+                ];
+            });
+
+        $result = $this->run_sync_verb($task);
+
+        $this->assertCount(1, $requested);
+        $this->assertFalse($result['complete']);
+    }
+
+    public function test_sync_verb_resolves_a_relative_pagination_url(): void {
+        $this->resetAfterTest(true);
+        $requested = [];
+        $responses = [
+            (object) ['statements' => [], 'more' => '/xapi/statements?cursor=next'],
+            (object) ['statements' => []],
+        ];
+        $task = $this->getMockBuilder(sync_lrs_competencies::class)
+            ->onlyMethods(['fetch_statements'])
+            ->getMock();
+        $task->method('fetch_statements')
+            ->willReturnCallback(static function (string $url) use (&$requested, &$responses): object {
+                $requested[] = $url;
+                return array_shift($responses);
+            });
+
+        $result = $this->run_sync_verb($task);
+
+        $this->assertTrue($result['complete']);
+        $this->assertSame('https://lrs.example.test/xapi/statements?cursor=next', $requested[1]);
+    }
+
+    public function test_sync_verb_follows_a_pagination_url_on_the_configured_host(): void {
+        $this->resetAfterTest(true);
+        $requested = [];
+        $more = 'https://lrs.example.test/xapi/statements?cursor=next';
+        $responses = [
+            (object) ['statements' => [], 'more' => $more],
+            (object) ['statements' => []],
+        ];
+        $task = $this->getMockBuilder(sync_lrs_competencies::class)
+            ->onlyMethods(['fetch_statements'])
+            ->getMock();
+        $task->method('fetch_statements')
+            ->willReturnCallback(static function (string $url) use (&$requested, &$responses): object {
+                $requested[] = $url;
+                return array_shift($responses);
+            });
+
+        $result = $this->run_sync_verb($task);
+
+        $this->assertTrue($result['complete']);
+        $this->assertSame($more, $requested[1]);
+    }
+
+    /**
+     * Run the protected sync_verb() method against the test endpoint.
+     *
+     * @param sync_lrs_competencies $task The task under test.
+     * @return array{count: int, checkpoint: ?string, complete: bool} Sync result.
+     */
+    private function run_sync_verb(sync_lrs_competencies $task): array {
+        $syncverb = \Closure::bind(
+            static function (sync_lrs_competencies $task): array {
+                return $task->sync_verb(
+                    'https://lrs.example.test/xapi',
+                    'key',
+                    'secret',
+                    sync_lrs_competencies::VERB_ASSERTED,
+                    false
+                );
+            },
+            null,
+            sync_lrs_competencies::class
+        );
+        return $syncverb($task);
     }
 }
