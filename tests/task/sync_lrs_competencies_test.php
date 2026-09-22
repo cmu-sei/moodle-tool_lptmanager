@@ -362,6 +362,111 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         $this->assertSame($more, $requested[1]);
     }
 
+    public function test_competency_idnumber_comes_from_the_tla_extension(): void {
+        $this->resetAfterTest(true);
+        $object = (object) [
+            'id' => 'https://elsewhere.example.test/activities/lab-4',
+            'definition' => (object) [
+                'extensions' => (object) [
+                    'https://w3id.org/xapi/tla/extensions/competency-identifier' => 'T0023',
+                ],
+            ],
+        ];
+
+        $this->assertSame('T0023', $this->extract_competency_idnumber($object));
+    }
+
+    public function test_competency_idnumber_comes_from_a_prefixed_object_iri(): void {
+        $this->resetAfterTest(true);
+        set_config('competency_iri_prefix', 'https://niccs.example.test/ksat/', 'tool_lptmanager');
+        $object = (object) ['id' => 'https://niccs.example.test/ksat/T0023'];
+
+        $this->assertSame('T0023', $this->extract_competency_idnumber($object));
+    }
+
+    public function test_an_unprefixed_object_iri_resolves_no_competency(): void {
+        $this->resetAfterTest(true);
+        set_config('competency_iri_prefix', 'https://niccs.example.test/ksat/', 'tool_lptmanager');
+
+        // Reading the last path segment of any IRI would let this unrelated activity grade T0023.
+        $object = (object) ['id' => 'https://elsewhere.example.test/activities/T0023'];
+
+        $this->assertNull($this->extract_competency_idnumber($object));
+    }
+
+    public function test_a_path_below_the_iri_prefix_resolves_no_competency(): void {
+        $this->resetAfterTest(true);
+        set_config('competency_iri_prefix', 'https://niccs.example.test/ksat/', 'tool_lptmanager');
+        $object = (object) ['id' => 'https://niccs.example.test/ksat/T0023/evidence'];
+
+        $this->assertNull($this->extract_competency_idnumber($object));
+    }
+
+    public function test_a_blank_framework_allowlist_allows_no_framework(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $framework = $this->getDataGenerator()->get_plugin_generator('core_competency')->create_framework([
+            'idnumber' => 'https://niccs.example.test/framework/nice',
+        ]);
+        set_config('lrs_sync_frameworks', '', 'tool_lptmanager');
+
+        $allowed = $this->get_allowed_framework_ids();
+
+        $this->assertSame([], $allowed);
+        $this->assertNotContains((int) $framework->get('id'), $allowed);
+    }
+
+    public function test_the_framework_allowlist_resolves_configured_iris(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $generator = $this->getDataGenerator()->get_plugin_generator('core_competency');
+        $allowedframework = $generator->create_framework([
+            'idnumber' => 'https://niccs.example.test/framework/nice',
+        ]);
+        $otherframework = $generator->create_framework([
+            'idnumber' => 'https://niccs.example.test/framework/other',
+        ]);
+        set_config('lrs_sync_frameworks', "https://niccs.example.test/framework/nice\n", 'tool_lptmanager');
+
+        $allowed = $this->get_allowed_framework_ids();
+
+        $this->assertSame([(int) $allowedframework->get('id')], $allowed);
+        $this->assertNotContains((int) $otherframework->get('id'), $allowed);
+    }
+
+    /**
+     * Run the protected extract_competency_idnumber() method.
+     *
+     * @param object $object The xAPI statement object.
+     * @return string|null The resolved competency idnumber.
+     */
+    private function extract_competency_idnumber(object $object): ?string {
+        $extract = \Closure::bind(
+            static function (sync_lrs_competencies $task, object $object): ?string {
+                return $task->extract_competency_idnumber($object);
+            },
+            null,
+            sync_lrs_competencies::class
+        );
+        return $extract(new sync_lrs_competencies(), $object);
+    }
+
+    /**
+     * Run the protected get_allowed_framework_ids() method.
+     *
+     * @return int[] Framework IDs the sync is allowed to grade.
+     */
+    private function get_allowed_framework_ids(): array {
+        $allowed = \Closure::bind(
+            static function (sync_lrs_competencies $task): array {
+                return $task->get_allowed_framework_ids();
+            },
+            null,
+            sync_lrs_competencies::class
+        );
+        return $allowed(new sync_lrs_competencies());
+    }
+
     /**
      * Run the protected sync_verb() method against the test endpoint.
      *

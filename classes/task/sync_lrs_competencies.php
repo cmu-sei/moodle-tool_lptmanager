@@ -74,6 +74,9 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     /** @var int Maximum allowed number of LRS pages to process per verb. */
     const MAX_PAGES_PER_VERB = 1000;
 
+    /** @var int[]|null Framework IDs the sync may grade, or null before the allowlist is read. */
+    private ?array $allowedframeworkids = null;
+
     /**
      * Get a descriptive name for this task.
      *
@@ -490,6 +493,14 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
                 mtrace("Competency with idnumber '{$idnumber}' not found in Moodle.");
                 return false;
             }
+            // The allowlist governs the log as well as the grading. When an idnumber exists in both
+            // an allowed and a disallowed framework and the statement named no framework, the
+            // record found here may be the disallowed one; losing a log row is the safe direction.
+            $framework = (int) $competencyrecord->competencyframeworkid;
+            if (!in_array($framework, $this->get_allowed_framework_ids(), true)) {
+                mtrace("Competency '{$idnumber}' is outside the allowed competency frameworks.");
+                return false;
+            }
             $competencyid = (int) $competencyrecord->id;
         }
 
@@ -553,6 +564,11 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     /**
      * Extract a competency idnumber from an xAPI activity object.
      *
+     * The identifier has to be asserted deliberately: either through the TLA extension, or as the
+     * remainder of an object IRI under the configured competency prefix. Reading the last path
+     * segment of any other IRI would let an unrelated activity ending in, say, /T0023 grade
+     * competency T0023, and a competency grade is a credential.
+     *
      * @param object|null $object The xAPI object.
      * @return string|null The competency idnumber or null.
      */
@@ -565,22 +581,34 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         $idnumber = null;
 
         // Try the TLA extension first.
-        if (!empty($object->definition->extensions->{'https://w3id.org/xapi/tla/extensions/competency-identifier'})) {
-            $idnumber = $object->definition->extensions->{'https://w3id.org/xapi/tla/extensions/competency-identifier'};
+        $extension = $object->definition->extensions->{'https://w3id.org/xapi/tla/extensions/competency-identifier'}
+            ?? null;
+        if ($extension !== null && !is_string($extension)) {
+            mtrace('Statement competency identifier extension must be a string.');
+            return null;
+        }
+        if ($extension !== null && trim($extension) !== '') {
+            $idnumber = trim($extension);
         }
 
-        // Fallback: extract from the IRI path (e.g., .../ksat/T0023).
-        if ($idnumber === null && !empty($object->id)) {
+        // Otherwise take the remainder of an object IRI under the configured prefix.
+        if ($idnumber === null && !empty($object->id) && is_string($object->id)) {
             $prefix = get_config('tool_lptmanager', 'competency_iri_prefix');
-            if ($prefix && strpos($object->id, $prefix) === 0) {
-                $idnumber = substr($object->id, strlen($prefix));
-            } else {
-                $idnumber = basename(parse_url($object->id, PHP_URL_PATH));
+            if (empty($prefix) || strpos($object->id, $prefix) !== 0) {
+                mtrace("Statement object '{$object->id}' is not under the configured competency IRI prefix.");
+                return null;
             }
+            $idnumber = trim(substr($object->id, strlen($prefix)), '/');
         }
 
         if (empty($idnumber)) {
             mtrace('Could not extract competency identifier from statement object.');
+            return null;
+        }
+
+        // The remainder has to name one competency, not a path below the prefix.
+        if (strpos($idnumber, '/') !== false) {
+            mtrace("Competency identifier '{$idnumber}' is not a single path segment.");
             return null;
         }
 
@@ -605,19 +633,27 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     }
 
     /**
-     * Get the set of allowed framework IDs from the allowlist setting.
+     * Get the set of framework IDs the sync is allowed to grade.
      *
-     * @return int[]|null Array of allowed framework IDs, or null if all are allowed.
+     * An empty allowlist permits nothing rather than everything. A competency grade is a
+     * credential, and a cleared setting is far more likely an accident than a deliberate decision
+     * to accept assertions against every framework on the site.
+     *
+     * @return int[] Allowed framework IDs, empty if no framework may be graded.
      */
-    private function get_allowed_framework_ids(): ?array {
+    private function get_allowed_framework_ids(): array {
         global $DB;
 
-        $setting = get_config('tool_lptmanager', 'lrs_sync_frameworks');
-        if (empty(trim($setting ?? ''))) {
-            return null;
+        if ($this->allowedframeworkids !== null) {
+            return $this->allowedframeworkids;
         }
 
-        $iris = array_filter(array_map('trim', explode("\n", $setting)));
+        $setting = get_config('tool_lptmanager', 'lrs_sync_frameworks');
+        $iris = array_filter(array_map('trim', explode("\n", (string) $setting)));
+        if (!$iris) {
+            mtrace('No allowed competency frameworks are configured; nothing will be synced.');
+        }
+
         $ids = [];
         foreach ($iris as $iri) {
             $fw = $DB->get_record('competency_framework', ['idnumber' => $iri]);
@@ -628,6 +664,7 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
             }
         }
 
+        $this->allowedframeworkids = $ids;
         return $ids;
     }
 
@@ -679,7 +716,7 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
                 if ($frameworkid !== null && $compframeworkid !== $frameworkid) {
                     continue;
                 }
-                if ($allowedframeworkids !== null && !in_array($compframeworkid, $allowedframeworkids, true)) {
+                if (!in_array($compframeworkid, $allowedframeworkids, true)) {
                     continue;
                 }
                 $competency = $pc->competency;
