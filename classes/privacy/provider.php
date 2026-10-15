@@ -42,22 +42,169 @@ DM24-1177
 
 namespace tool_lptmanager\privacy;
 
-defined('MOODLE_INTERNAL') || die();
+use core_privacy\local\metadata\collection;
+use core_privacy\local\request\approved_contextlist;
+use core_privacy\local\request\approved_userlist;
+use core_privacy\local\request\contextlist;
+use core_privacy\local\request\transform;
+use core_privacy\local\request\userlist;
+use core_privacy\local\request\writer;
 
 /**
- * Privacy Subsystem for tool_lptmanager implementing null_provider.
+ * Privacy Subsystem for tool_lptmanager.
  *
- * @copyright  2018 Zig Tan <zig@moodle.com>
+ * The LRS sync task logs one row per xAPI statement it applied to a learner. Those rows belong
+ * to the learner, so they are reported in the learner's user context. The competency ratings and
+ * evidence the sync writes are stored and reported by core_competency.
+ *
+ * @copyright  2026 Carnegie Mellon University
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class provider implements \core_privacy\local\metadata\null_provider {
+class provider implements
+    \core_privacy\local\metadata\provider,
+    \core_privacy\local\request\core_userlist_provider,
+    \core_privacy\local\request\plugin\provider {
+    /** @var string The sync log table. */
+    private const TABLE = 'tool_lptmanager_lrs_sync';
+
     /**
-     * Get the language string identifier with the component's language
-     * file to explain why this plugin stores no data.
+     * Describe the personal data stored by this plugin.
      *
-     * @return  string
+     * @param collection $collection The collection to add metadata to.
+     * @return collection
      */
-    public static function get_reason(): string {
-        return 'privacy:metadata';
+    public static function get_metadata(collection $collection): collection {
+        $collection->add_database_table(self::TABLE, [
+            'statementid' => 'privacy:metadata:lrs_sync:statementid',
+            'userid' => 'privacy:metadata:lrs_sync:userid',
+            'competencyid' => 'privacy:metadata:lrs_sync:competencyid',
+            'planid' => 'privacy:metadata:lrs_sync:planid',
+            'verb' => 'privacy:metadata:lrs_sync:verb',
+            'exerciseid' => 'privacy:metadata:lrs_sync:exerciseid',
+            'runid' => 'privacy:metadata:lrs_sync:runid',
+            'timecreated' => 'privacy:metadata:lrs_sync:timecreated',
+        ], 'privacy:metadata:lrs_sync');
+
+        return $collection;
+    }
+
+    /**
+     * Get the contexts that hold data for the given user.
+     *
+     * @param int $userid The user to search.
+     * @return contextlist
+     */
+    public static function get_contexts_for_userid(int $userid): contextlist {
+        $contextlist = new contextlist();
+        $sql = "SELECT ctx.id
+                  FROM {context} ctx
+                  JOIN {" . self::TABLE . "} s ON s.userid = ctx.instanceid
+                 WHERE ctx.contextlevel = :contextlevel
+                   AND s.userid = :userid";
+        $contextlist->add_from_sql($sql, ['contextlevel' => CONTEXT_USER, 'userid' => $userid]);
+
+        return $contextlist;
+    }
+
+    /**
+     * Get the users who have data in the given context.
+     *
+     * @param userlist $userlist The userlist to fill.
+     */
+    public static function get_users_in_context(userlist $userlist) {
+        $context = $userlist->get_context();
+        if (!$context instanceof \context_user) {
+            return;
+        }
+
+        $sql = "SELECT userid FROM {" . self::TABLE . "} WHERE userid = :userid";
+        $userlist->add_from_sql('userid', $sql, ['userid' => $context->instanceid]);
+    }
+
+    /**
+     * Export the user's sync log.
+     *
+     * @param approved_contextlist $contextlist The approved contexts to export.
+     */
+    public static function export_user_data(approved_contextlist $contextlist) {
+        global $DB;
+
+        $userid = $contextlist->get_user()->id;
+        foreach ($contextlist->get_contexts() as $context) {
+            if (!$context instanceof \context_user || (int) $context->instanceid !== (int) $userid) {
+                continue;
+            }
+
+            $records = $DB->get_records(self::TABLE, ['userid' => $userid], 'timecreated, id');
+            if (!$records) {
+                continue;
+            }
+
+            $statements = [];
+            foreach ($records as $record) {
+                $statements[] = (object) [
+                    'statementid' => $record->statementid,
+                    'competencyid' => $record->competencyid,
+                    'planid' => $record->planid,
+                    'verb' => $record->verb,
+                    'exerciseid' => $record->exerciseid,
+                    'runid' => $record->runid,
+                    'timecreated' => transform::datetime($record->timecreated),
+                ];
+            }
+
+            writer::with_context($context)->export_data(
+                [get_string('privacy:path:lrssync', 'tool_lptmanager')],
+                (object) ['statements' => $statements]
+            );
+        }
+    }
+
+    /**
+     * Delete all data in the given context.
+     *
+     * @param \context $context The context to delete in.
+     */
+    public static function delete_data_for_all_users_in_context(\context $context) {
+        global $DB;
+
+        if ($context instanceof \context_user) {
+            $DB->delete_records(self::TABLE, ['userid' => $context->instanceid]);
+        }
+    }
+
+    /**
+     * Delete the user's data in the approved contexts.
+     *
+     * @param approved_contextlist $contextlist The approved contexts to delete in.
+     */
+    public static function delete_data_for_user(approved_contextlist $contextlist) {
+        global $DB;
+
+        $userid = $contextlist->get_user()->id;
+        foreach ($contextlist->get_contexts() as $context) {
+            if ($context instanceof \context_user && (int) $context->instanceid === (int) $userid) {
+                $DB->delete_records(self::TABLE, ['userid' => $userid]);
+            }
+        }
+    }
+
+    /**
+     * Delete the data of the approved users in the given context.
+     *
+     * @param approved_userlist $userlist The approved users to delete for.
+     */
+    public static function delete_data_for_users(approved_userlist $userlist) {
+        global $DB;
+
+        $context = $userlist->get_context();
+        if (!$context instanceof \context_user) {
+            return;
+        }
+
+        // A user context only ever holds its own user's rows.
+        if (in_array((int) $context->instanceid, array_map('intval', $userlist->get_userids()), true)) {
+            $DB->delete_records(self::TABLE, ['userid' => $context->instanceid]);
+        }
     }
 }
