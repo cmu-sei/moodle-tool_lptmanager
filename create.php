@@ -54,13 +54,22 @@ $PAGE->set_url($url);
 $PAGE->set_title($pagetitle);
 $PAGE->set_pagelayout('admin');
 
-echo $OUTPUT->header();
-
+// Redirects must happen before any output is sent.
 if (optional_param('cancel', 0, PARAM_BOOL)) {
     redirect(new moodle_url('/admin/tool/lptmanager/create.php', ['pagecontextid' => $context->id]));
 }
 
-if (optional_param('confirm', 0, PARAM_BOOL)) {
+$confirm = optional_param('confirm', 0, PARAM_BOOL);
+if (!$confirm) {
+    $form = new \tool_lptmanager\form\create($url->out(false), ['persistent' => null, 'context' => $context]);
+    if ($form->is_cancelled()) {
+        redirect(new moodle_url('/admin/tool/lp/learningplans.php', ['pagecontextid' => $context->id]));
+    }
+}
+
+echo $OUTPUT->header();
+
+if ($confirm) {
     // Step 3: Confirmation form submitted, proceed to create.
     require_sesskey();
 
@@ -80,12 +89,8 @@ if (optional_param('confirm', 0, PARAM_BOOL)) {
     $urlparams = ['pagecontextid' => $context->id];
     $frameworksurl = new moodle_url('/admin/tool/lp/learningplans.php', $urlparams);
     echo $OUTPUT->continue_button($frameworksurl);
-    die();
 } else {
-    $form = new \tool_lptmanager\form\create($url->out(false), ['persistent' => null, 'context' => $context]);
-    if ($form->is_cancelled()) {
-        redirect(new moodle_url('/admin/tool/lp/learningplans.php', ['pagecontextid' => $context->id]));
-    } else if ($data = $form->get_data()) {
+    if ($data = $form->get_data()) {
         require_sesskey();
         $frameworkid = !empty($data->frameworkid) ? (int)$data->frameworkid : 0;
 

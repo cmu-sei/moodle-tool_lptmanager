@@ -86,6 +86,7 @@ if ($form->is_cancelled()) {
             $urlparams = ['pagecontextid' => $context->id];
             $frameworksurl = new moodle_url('/admin/tool/lp/learningplans.php', $urlparams);
             echo $OUTPUT->continue_button($frameworksurl);
+            echo $OUTPUT->footer();
             die();
         }
     } else {
