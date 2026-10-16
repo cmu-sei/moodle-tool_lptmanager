@@ -81,7 +81,7 @@ Once the LPT Manager plugin has been installed, Moodle administrators or Moodle 
 
 1. In Moodle, navigate to **Site administration**, **Competencies**, **Create learning plan templates from competency framework**.
 2. Choose a competency framework (e.g., the NICE Workforce Framework) to sync with.
-3. For **Competency Name**, enter the competency name or ID (e.g., DD-WRL-001).
+3. For **Competency Name**, enter text that the competency ID numbers contain (e.g., WRL matches DD-WRL-001). The text is matched literally, not as a regular expression.
 4. Click **Create**.  Confirm the creation. The plugin will add cross-referenced competencies to the selected learning plan template.
 
 ### LRS Competency Sync

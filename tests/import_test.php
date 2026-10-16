@@ -53,7 +53,7 @@ final class import_test extends \advanced_testcase {
      * shortname, description, descriptionformat, competencyframeworkidnumber, relatedidnumbers.
      *
      * The framework and cross reference columns are deliberately empty so that no framework
-     * lookup is attempted, which keeps the debugging output of an import deterministic.
+     * lookup is attempted.
      */
     private const CSV = <<<'CSV'
     Short name,Description,Description format,Competency Framework ID Number,Cross-referenced competency ID numbers
@@ -85,9 +85,16 @@ final class import_test extends \advanced_testcase {
 
         $output = $this->run_import(self::CSV);
 
-        // One debugging message is emitted per created template.
-        $this->assertDebuggingCalledCount(2);
-        $this->assertStringContainsString('created successfully', $output);
+        // Success is reported to the user as a notification, not through debugging().
+        $this->assertDebuggingNotCalled();
+        $this->assertStringContainsString(
+            get_string('templatecreated', 'tool_lptmanager', 'Threat Analyst'),
+            $output
+        );
+        $this->assertStringContainsString(
+            get_string('templatecreated', 'tool_lptmanager', 'Incident Responder'),
+            $output
+        );
         $this->assertEqualsCanonicalizing(
             ['Incident Responder', 'Threat Analyst'],
             $this->get_system_template_shortnames()
@@ -106,17 +113,79 @@ final class import_test extends \advanced_testcase {
         set_config('enabled', 1, 'core_competency');
 
         $this->run_import(self::CSV);
-        $this->assertDebuggingCalledCount(2);
 
         $output = $this->run_import(self::CSV);
 
-        // The second pass skips both rows, again one debugging message per row.
-        $this->assertDebuggingCalledCount(2);
-        $this->assertStringContainsString('already exists', $output);
+        // The second pass skips both rows, warning once per row.
+        $this->assertDebuggingNotCalled();
+        $this->assertStringContainsString(
+            get_string('templateexists', 'tool_lptmanager', 'Threat Analyst'),
+            $output
+        );
+        $this->assertStringNotContainsString(
+            get_string('templatecreated', 'tool_lptmanager', 'Threat Analyst'),
+            $output
+        );
         $this->assertEqualsCanonicalizing(
             ['Incident Responder', 'Threat Analyst'],
             $this->get_system_template_shortnames()
         );
+    }
+
+    public function test_import_links_cross_referenced_competencies(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        set_config('enabled', 1, 'core_competency');
+
+        $lpg = $this->getDataGenerator()->get_plugin_generator('core_competency');
+        $framework = $lpg->create_framework(['idnumber' => 'FW1']);
+        $k1 = $lpg->create_competency(['competencyframeworkid' => $framework->get('id'), 'idnumber' => 'K-001']);
+        $k2 = $lpg->create_competency(['competencyframeworkid' => $framework->get('id'), 'idnumber' => 'K-002']);
+
+        $csv = <<<'CSV'
+        Short name,Description,Description format,Competency Framework ID Number,Cross-referenced competency ID numbers
+        Threat Analyst,"Analyses adversary activity.",1,FW1,"K-001,K-002"
+        CSV;
+
+        $output = $this->run_import($csv);
+
+        $this->assertDebuggingNotCalled();
+        $this->assertStringContainsString(
+            get_string('templatecreated', 'tool_lptmanager', 'Threat Analyst'),
+            $output
+        );
+        $templates = api::list_templates('shortname', 'ASC', 0, 0, \context_system::instance());
+        $template = reset($templates);
+        $competencyids = array_map(
+            fn($competency) => (int) $competency->get('id'),
+            api::list_competencies_in_template($template->get('id'))
+        );
+        $this->assertEqualsCanonicalizing([(int) $k1->get('id'), (int) $k2->get('id')], $competencyids);
+    }
+
+    public function test_import_warns_when_the_framework_is_missing(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        set_config('enabled', 1, 'core_competency');
+
+        $csv = <<<'CSV'
+        Short name,Description,Description format,Competency Framework ID Number,Cross-referenced competency ID numbers
+        Threat Analyst,"Analyses adversary activity.",1,NOSUCHFW,K-001
+        CSV;
+
+        $output = $this->run_import($csv);
+
+        // The template is still created, but the user is told its competencies were not linked.
+        $this->assertDebuggingNotCalled();
+        $a = (object) ['framework' => 'NOSUCHFW', 'template' => 'Threat Analyst'];
+        $this->assertStringContainsString(get_string('frameworknotfound', 'tool_lptmanager', $a), $output);
+        $this->assertStringNotContainsString(
+            get_string('templatecreated', 'tool_lptmanager', 'Threat Analyst'),
+            $output
+        );
+        $this->assertSame(['Threat Analyst'], $this->get_system_template_shortnames());
+        $templates = api::list_templates('shortname', 'ASC', 0, 0, \context_system::instance());
+        $this->assertEmpty(api::list_competencies_in_template(reset($templates)->get('id')));
     }
 
     public function test_empty_file_reports_an_invalid_file_error(): void {
