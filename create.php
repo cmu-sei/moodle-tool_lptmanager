@@ -94,7 +94,7 @@ if ($confirm) {
         require_sesskey();
         $frameworkid = !empty($data->frameworkid) ? (int)$data->frameworkid : 0;
 
-        // Extract the regex value from the form data
+        // Extract the search text from the form data.
         $regexvalue = $data->regexvalue;
 
         // Define filters for competency search
@@ -103,14 +103,14 @@ if ($confirm) {
             $filters['competencyframeworkid'] = $frameworkid;
         }
 
-        // Get the list of competencies based on the regex filter
+        // Get the competencies of the selected framework.
         $competencies = api::list_competencies($filters);
         $matching_competencies = [];
 
-        // Process the competencies to find matches.
+        // Match every competency whose idnumber contains the search text (a literal substring, not a regex).
         foreach ($competencies as $competency) {
             $idnumber = $competency->get('idnumber');
-            if (str_contains($idnumber, $regexvalue) !== false) {
+            if (str_contains($idnumber, $regexvalue)) {
                 $matching_competencies[] = $competency->get('id');
             }
         }
