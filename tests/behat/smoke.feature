@@ -16,11 +16,16 @@ Feature: Learning Plan Template Manager pages
     And I should see "SQL LRS Connection"
     And I should see "Enable LRS sync"
 
-  # Stops at the column-mapping step: pressing "Confirm" runs lp_importer::import(), which
-  # always calls debugging() on success, and Behat fails any page carrying debugging output.
   @javascript @_file_upload
-  Scenario: Uploading a CSV file leads to the column mapping step
-    Given I log in as "admin"
+  Scenario: Uploading a CSV file and confirming the column mapping imports the template
+    Given the following "core_competency > frameworks" exist:
+      | shortname       | idnumber |
+      | Behat framework | BFW      |
+    And the following "core_competency > competencies" exist:
+      | shortname     | competencyframework | idnumber |
+      | Knowledge one | BFW                 | K-001    |
+      | Knowledge two | BFW                 | K-002    |
+    And I log in as "admin"
     And I navigate to "Competencies > Learning Plan Template Manager" in site administration
     And I should not see "Select course category"
     When I set the field "Use specific category" to "1"
@@ -33,6 +38,13 @@ Feature: Learning Plan Template Manager pages
     And the field "Short name" matches value "Short name"
     And the field "Competency Framework ID Number" matches value "Competency Framework ID Number"
     And the field "Cross-referenced competency ID numbers" matches value "Cross-referenced competency ID numbers"
+    And I press "Confirm"
+    And I should see "Learning plan template 'Imported template' created successfully."
+    And I press "Continue"
+    # The imported template carries the competencies listed in the CSV.
+    And I click on "Imported template" "link"
+    And I should see "Knowledge one"
+    And I should see "Knowledge two"
 
   Scenario: Templates are created from the competencies matching an ID number pattern
     Given the following "core_competency > frameworks" exist:
