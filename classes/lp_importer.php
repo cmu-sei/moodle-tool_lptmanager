@@ -276,9 +276,8 @@ class lp_importer {
         $templates = api::list_templates('shortname', 'ASC', null, null, \context::instance_by_id($contextid));
         foreach ($templates as $template) {
             if ($workrole->shortname === $template->get('shortname')) {
-                debugging("Template with shortname '{$workrole->shortname}' already exists", DEBUG_DEVELOPER);
                 echo $OUTPUT->notification(
-                    "A template with the shortname '{$workrole->shortname}' already exists.",
+                    get_string('templateexists', 'tool_lptmanager', s($workrole->shortname)),
                     'notifywarning'
                 );
                 return;
@@ -334,19 +333,21 @@ class lp_importer {
                     }
                 }
             } else {
-                debugging("Competency framework '{$workrole->competencyframeworkidnumber}' not found", DEBUG_DEVELOPER);
+                // The template exists now, but none of its cross-referenced competencies could be linked.
+                $a = (object) [
+                    'framework' => s($workrole->competencyframeworkidnumber),
+                    'template' => s($workrole->shortname),
+                ];
+                echo $OUTPUT->notification(get_string('frameworknotfound', 'tool_lptmanager', $a), 'notifywarning');
+                return;
             }
         }
-        global $OUTPUT;
 
         echo $OUTPUT->notification(
-            "Learning plan template '{$workrole->shortname}' created successfully.",
+            get_string('templatecreated', 'tool_lptmanager', s($workrole->shortname)),
             'notifysuccess'
         );
         echo $OUTPUT->notification(get_string('learningplansimported', 'tool_lptmanager'), 'notifysuccess');
-
-        // Additional logic for processing competencies (if needed) can be added here.
-        debugging("Learning plan template '{$workrole->shortname}' created successfully in context ID {$contextid}", DEBUG_DEVELOPER);
     }
 
     /**
