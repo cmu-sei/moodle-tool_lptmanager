@@ -96,12 +96,8 @@ class lp_exporter {
                     $framework = null;
                     break;
                 }
-            } else if ($framework->get('id') !== $competency->get('competencyframeworkid')) {
-                debugging("multiple frameworks in learning plan", DEBUG_DEVELOPER);
-                throw new \Exception(
-                    "Multiple frameworks in learning plan: " . $framework->get('id') .
-                    " and " . $competency->get('competencyframeworkidnumber')
-                );
+            } else if ((int) $framework->get('id') !== (int) $competency->get('competencyframeworkid')) {
+                $this->throw_multiple_frameworks($framework, $competency);
             }
 
             // Append competency ID numbers to $related.
@@ -158,10 +154,9 @@ class lp_exporter {
             foreach ($competencies as $competency) {
                 if ($framework === "") {
                     $framework = $competency->get_framework();
-                } else if ($framework->get('id') !== $competency->get('competencyframeworkid')) {
-                    debugging("multiple frameworks in learning plan", DEBUG_DEVELOPER);
-                    debugging("multiple frameworks in learning plan: " . $framework->get('id') . " and " . $competency->get('competencyframeworkidnumber'), DEBUG_DEVELOPER);
-                    // TODO throw exception
+                } else if ((int) $framework->get('id') !== (int) $competency->get('competencyframeworkid')) {
+                    // Rows are only buffered until download_file(), so nothing has been sent yet.
+                    $this->throw_multiple_frameworks($framework, $competency);
                 }
                 if ($related === "") {
                     $related = $competency->get('idnumber');
@@ -180,5 +175,24 @@ class lp_exporter {
             $writer->add_data($row);
         }
         $writer->download_file();
+    }
+
+    /**
+     * Refuse to export a template whose competencies span more than one framework.
+     *
+     * The CSV format has a single framework column per template, so such a template cannot be
+     * exported without silently dropping competencies on re-import.
+     *
+     * @param \core_competency\competency_framework $framework The framework of the first competency.
+     * @param \core_competency\competency $competency The competency from another framework.
+     * @throws \moodle_exception
+     */
+    protected function throw_multiple_frameworks($framework, $competency) {
+        $a = (object) [
+            'template' => s($this->template->get('shortname')),
+            'first' => s($framework->get('idnumber')),
+            'second' => s($competency->get_framework()->get('idnumber')),
+        ];
+        throw new \moodle_exception('multipleframeworks', 'tool_lptmanager', '', $a);
     }
 }

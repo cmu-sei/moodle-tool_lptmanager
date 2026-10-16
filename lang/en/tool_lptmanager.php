@@ -55,6 +55,7 @@ $string['export'] = 'Export';
 $string['exportall'] = 'Export All Learning Plans';
 $string['exportall_help'] = 'Export All Learning Plans instead of just one';
 $string['exportnavlink'] = 'Export learning plan templates';
+$string['multipleframeworks'] = 'Learning plan template \'{$a->template}\' cannot be exported: its competencies belong to more than one competency framework (\'{$a->first}\' and \'{$a->second}\'). An exported template can only reference one framework.';
 $string['createnavlink'] = 'Create learning plan templates from competency framework';
 $string['id'] = 'ID';
 $string['idnumber'] = 'ID number';
