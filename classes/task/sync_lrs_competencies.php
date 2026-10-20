@@ -910,6 +910,19 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
             return;
         }
 
+        // Rating a plan competency fires competency_user_competency_rated_in_plan, which
+        // logstore_xapi sends back to the LRS as a validated statement from Moodle's credential.
+        // Grading an already proficient competency again would answer that echo with another
+        // rating, and so another echo, on every run.
+        $usercompetency = \core_competency\user_competency::get_record([
+            'userid' => $plan->get('userid'),
+            'competencyid' => $competency->get('id'),
+        ]);
+        if ($usercompetency && $usercompetency->get('proficiency')) {
+            mtrace("Competency {$competency->get('idnumber')} is already proficient in plan {$plan->get('id')}, not regrading.");
+            return;
+        }
+
         $note = get_string('syncevidencenote', 'tool_lptmanager', $statementid);
 
         try {

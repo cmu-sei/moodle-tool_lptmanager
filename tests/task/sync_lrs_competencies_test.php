@@ -642,6 +642,27 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         $this->assertFalse($this->process_statement($statement, sync_lrs_competencies::VERB_ASSERTED));
     }
 
+    public function test_an_already_proficient_competency_is_not_regraded(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/already proficient/');
+        $this->configure_trust();
+        $learner = $this->create_learner_with_plan();
+        $this->assertTrue($this->process_statement($this->asserted_statement(), sync_lrs_competencies::VERB_ASSERTED));
+        $evidence = $DB->count_records('competency_evidence');
+
+        // The validated statement logstore_xapi sends back for the rating above.
+        $echo = $this->validated_statement();
+        $echo->id = 'statement-2';
+        $this->assertTrue($this->process_statement($echo, sync_lrs_competencies::VERB_VALIDATED));
+
+        $this->assertSame($evidence, $DB->count_records('competency_evidence'));
+        $this->assertTrue($DB->record_exists('tool_lptmanager_lrs_sync', [
+            'statementid' => 'statement-2',
+            'userid' => $learner->id,
+        ]));
+    }
+
     public function test_an_assertion_against_an_uninstalled_framework_version_is_skipped(): void {
         global $DB;
         $this->resetAfterTest(true);
