@@ -108,6 +108,7 @@ The sync grades nothing until a trusted source is configured. Statements from un
 - For `asserted` statements, the learner is the actor. For `validated` statements (instructor-rated), the learner is resolved from the TLA `learner` context extension; a validated statement without it is skipped.
 - The learner is matched to a Moodle user only when `account.homePage` is the learner homePage configured for the statement's source, by `account.name` matching `user.idnumber` (Keycloak sub). Email (`mbox`) is not used.
 - It resolves the xAPI object to a Moodle competency by extracting the competency identifier from the TLA extension or IRI path.
+- It settles on one competency framework: the one named in `contextActivities.grouping` (TLA `competency-framework` activity type), which must be installed and in **Allowed competency frameworks**. A statement naming a framework that is missing or not allowed is skipped, never matched by identifier alone, because NICE reuses codes across versions. A statement naming no framework is matched only when exactly one allowed framework has the identifier.
 - It finds **all** of the user's learning plans containing that competency and grades it as proficient in each one. This provides multi-plan propagation — a competency assertion from any trusted source (Moodle, Crucible exercises, external systems) is applied across all of the learner's plans.
 - Processed statements are recorded in the `tool_lptmanager_lrs_sync` table to prevent duplicate processing.
 

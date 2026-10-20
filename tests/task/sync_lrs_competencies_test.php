@@ -642,6 +642,67 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         $this->assertFalse($this->process_statement($statement, sync_lrs_competencies::VERB_ASSERTED));
     }
 
+    public function test_an_assertion_against_an_uninstalled_framework_version_is_skipped(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/is not installed/');
+        $this->configure_trust();
+        $this->create_learner_with_plan();
+        $statement = $this->asserted_statement();
+        $this->name_framework($statement, self::FRAMEWORK . '-v9');
+
+        $this->assertFalse($this->process_statement($statement, sync_lrs_competencies::VERB_ASSERTED));
+
+        $this->assertFalse($DB->record_exists('competency_usercomp', ['proficiency' => 1]));
+        $this->assertFalse($DB->record_exists('tool_lptmanager_lrs_sync', ['statementid' => 'statement-1']));
+    }
+
+    public function test_an_assertion_against_a_disallowed_framework_is_skipped(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/is not an allowed competency framework/');
+        $this->configure_trust();
+        $learner = $this->create_learner_with_plan();
+        $this->add_framework_version_to_plan($learner, self::FRAMEWORK . '-v2');
+        $statement = $this->asserted_statement();
+        $this->name_framework($statement, self::FRAMEWORK . '-v2');
+
+        $this->assertFalse($this->process_statement($statement, sync_lrs_competencies::VERB_ASSERTED));
+
+        $this->assertFalse($DB->record_exists('competency_usercomp', ['proficiency' => 1]));
+    }
+
+    public function test_an_assertion_grades_only_the_framework_it_names(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/Graded competency T0023/');
+        $this->configure_trust();
+        $learner = $this->create_learner_with_plan();
+        $other = $this->add_framework_version_to_plan($learner, self::FRAMEWORK . '-v2');
+        set_config('lrs_sync_frameworks', self::FRAMEWORK . "\n" . self::FRAMEWORK . '-v2', 'tool_lptmanager');
+        $statement = $this->asserted_statement();
+        $this->name_framework($statement, self::FRAMEWORK . '-v2');
+
+        $this->assertTrue($this->process_statement($statement, sync_lrs_competencies::VERB_ASSERTED));
+
+        $graded = $DB->get_fieldset_select('competency_usercomp', 'competencyid', 'userid = ? AND proficiency = 1', [$learner->id]);
+        $this->assertSame([(int) $other->get('id')], array_map('intval', $graded));
+    }
+
+    public function test_an_assertion_naming_no_framework_is_skipped_when_the_code_is_ambiguous(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/more than one allowed framework/');
+        $this->configure_trust();
+        $learner = $this->create_learner_with_plan();
+        $this->add_framework_version_to_plan($learner, self::FRAMEWORK . '-v2');
+        set_config('lrs_sync_frameworks', self::FRAMEWORK . "\n" . self::FRAMEWORK . '-v2', 'tool_lptmanager');
+
+        $this->assertFalse($this->process_statement($this->asserted_statement(), sync_lrs_competencies::VERB_ASSERTED));
+
+        $this->assertFalse($DB->record_exists('competency_usercomp', ['proficiency' => 1]));
+    }
+
     /**
      * Trust the test Moodle credential to assert and validate for the test realm, and the Blueprint
      * credential to assert for the other realm.
@@ -650,6 +711,38 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         set_config('lrs_trusted_asserters', self::LRS . ' ' . self::MOODLE_CREDENTIAL . ' ' . self::ISSUER . "/\n"
             . self::LRS . ' blueprint-credential ' . self::OTHER_ISSUER, 'tool_lptmanager');
         set_config('lrs_trusted_validators', self::LRS . '/ ' . self::MOODLE_CREDENTIAL . ' ' . self::ISSUER, 'tool_lptmanager');
+    }
+
+    /**
+     * Add another framework holding T0023 and put its T0023 in the learner's plan.
+     *
+     * @param \stdClass $learner The learner from create_learner_with_plan().
+     * @param string $iri The framework idnumber.
+     * @return \core_competency\competency The framework's T0023.
+     */
+    private function add_framework_version_to_plan(\stdClass $learner, string $iri): \core_competency\competency {
+        $generator = $this->getDataGenerator()->get_plugin_generator('core_competency');
+        $framework = $generator->create_framework(['idnumber' => $iri]);
+        $competency = $generator->create_competency([
+            'competencyframeworkid' => $framework->get('id'),
+            'idnumber' => 'T0023',
+        ]);
+        $plan = \core_competency\api::list_user_plans($learner->id);
+        $generator->create_plan_competency(['planid' => reset($plan)->get('id'), 'competencyid' => $competency->get('id')]);
+        return $competency;
+    }
+
+    /**
+     * Name a competency framework in a statement's contextActivities.grouping.
+     *
+     * @param object $statement The statement to change.
+     * @param string $iri The framework IRI.
+     */
+    private function name_framework(object $statement, string $iri): void {
+        $statement->context->contextActivities = (object) ['grouping' => [(object) [
+            'id' => $iri,
+            'definition' => (object) ['type' => 'https://w3id.org/xapi/tla/activity-types/competency-framework'],
+        ]]];
     }
 
     /**

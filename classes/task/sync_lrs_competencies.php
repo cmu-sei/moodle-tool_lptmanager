@@ -495,36 +495,23 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
             return false;
         }
 
-        // Extract the framework IRI from contextActivities.grouping if present.
-        $frameworkiri = $this->extract_framework_iri($statement);
+        // Settle on one framework before grading anything, so an assertion never lands on a
+        // competency in a framework or version it was not made against.
+        $frameworkid = $this->resolve_framework($this->extract_framework_iri($statement), $idnumber);
+        if ($frameworkid === null) {
+            return false;
+        }
 
         // Find and grade matching competencies across all of the user's learning plans.
-        $result = $this->grade_competency_in_plans($user, $idnumber, $frameworkiri, $statementid);
+        $result = $this->grade_competency_in_plans($user, $idnumber, $frameworkid, $statementid);
 
         $competencyid = $result['competencyid'];
         if ($competencyid === null) {
-            // Not in any plan — look up a competency record for the sync log.
-            $conditions = ['idnumber' => $idnumber];
-            if ($frameworkiri !== null) {
-                $fw = $DB->get_record('competency_framework', ['idnumber' => $frameworkiri]);
-                if ($fw) {
-                    $conditions['competencyframeworkid'] = $fw->id;
-                }
-            }
-            $competencyrecord = $DB->get_record('competency', $conditions);
-            if (!$competencyrecord) {
-                mtrace("Competency with idnumber '{$idnumber}' not found in Moodle.");
-                return false;
-            }
-            // The allowlist governs the log as well as the grading. When an idnumber exists in both
-            // an allowed and a disallowed framework and the statement named no framework, the
-            // record found here may be the disallowed one; losing a log row is the safe direction.
-            $framework = (int) $competencyrecord->competencyframeworkid;
-            if (!in_array($framework, $this->get_allowed_framework_ids(), true)) {
-                mtrace("Competency '{$idnumber}' is outside the allowed competency frameworks.");
-                return false;
-            }
-            $competencyid = (int) $competencyrecord->id;
+            // Not in any plan, so log the framework's competency instead.
+            $competencyid = (int) $DB->get_field('competency', 'id', [
+                'idnumber' => $idnumber,
+                'competencyframeworkid' => $frameworkid,
+            ]);
         }
 
         // Extract Crucible extensions if present.
@@ -753,13 +740,72 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      */
     private function extract_framework_iri(object $statement): ?string {
         $grouping = $statement->context->contextActivities->grouping ?? [];
-        foreach ($grouping as $activity) {
+        foreach (is_array($grouping) ? $grouping : [] as $activity) {
             $type = $activity->definition->type ?? '';
             if ($type === 'https://w3id.org/xapi/tla/activity-types/competency-framework') {
-                return $activity->id ?? null;
+                return is_string($activity->id ?? null) && $activity->id !== '' ? $activity->id : null;
             }
         }
         return null;
+    }
+
+    /**
+     * Resolve the allowed framework a statement's competency belongs to.
+     *
+     * A named framework has to be installed and allowed. It is never dropped in favour of
+     * matching the idnumber alone: NICE reuses codes across versions, and once two versions are
+     * installed an assertion against one that is missing here would grade the same code in
+     * another, which may not mean the same thing. Bridging versions is a crosswalk's job.
+     *
+     * A statement that names no framework is matched by idnumber across the allowed frameworks,
+     * and only when exactly one of them has it.
+     *
+     * @param string|null $frameworkiri The framework IRI from contextActivities.grouping, or null.
+     * @param string $idnumber The competency idnumber.
+     * @return int|null The framework ID, or null if the statement must be skipped.
+     */
+    private function resolve_framework(?string $frameworkiri, string $idnumber): ?int {
+        global $DB;
+
+        $allowed = $this->get_allowed_framework_ids();
+
+        if ($frameworkiri !== null) {
+            $frameworkid = $DB->get_field('competency_framework', 'id', ['idnumber' => $frameworkiri]);
+            if ($frameworkid === false) {
+                mtrace("Framework '{$frameworkiri}' is not installed, skipping competency '{$idnumber}'.");
+                return null;
+            }
+            if (!in_array((int) $frameworkid, $allowed, true)) {
+                mtrace("Framework '{$frameworkiri}' is not an allowed competency framework, skipping.");
+                return null;
+            }
+            if (!$DB->record_exists('competency', ['idnumber' => $idnumber, 'competencyframeworkid' => $frameworkid])) {
+                mtrace("Competency '{$idnumber}' not found in framework '{$frameworkiri}'.");
+                return null;
+            }
+            return (int) $frameworkid;
+        }
+
+        if (!$allowed) {
+            return null;
+        }
+        [$insql, $params] = $DB->get_in_or_equal($allowed, SQL_PARAMS_NAMED);
+        $params['idnumber'] = $idnumber;
+        $frameworkids = $DB->get_fieldset_select(
+            'competency',
+            'DISTINCT competencyframeworkid',
+            "idnumber = :idnumber AND competencyframeworkid {$insql}",
+            $params
+        );
+        if (!$frameworkids) {
+            mtrace("Competency '{$idnumber}' not found in the allowed competency frameworks.");
+            return null;
+        }
+        if (count($frameworkids) > 1) {
+            mtrace("Competency '{$idnumber}' is in more than one allowed framework and the statement names none.");
+            return null;
+        }
+        return (int) reset($frameworkids);
     }
 
     /**
@@ -801,40 +847,23 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     /**
      * Find and grade a competency by idnumber across all of the user's learning plans.
      *
-     * Matches by idnumber rather than competency ID so the correct framework-specific
-     * competency is used when the same idnumber exists in multiple frameworks.
-     * When a framework IRI is provided, only competencies from that framework are matched.
+     * Matches by idnumber within one framework, the one resolve_framework() settled on, so the
+     * same code in another framework or another version of this one is never graded.
      *
      * @param object $user The Moodle user record.
      * @param string $idnumber The competency idnumber from the xAPI statement.
-     * @param string|null $frameworkiri The framework IRI from contextActivities.grouping, or null.
+     * @param int $frameworkid The allowed framework the statement resolved to.
      * @param string $statementid The xAPI statement ID (for evidence note).
      * @return array{competencyid: int|null, planid: int|null} The first matched competency and plan IDs.
      */
     private function grade_competency_in_plans(
         object $user,
         string $idnumber,
-        ?string $frameworkiri,
+        int $frameworkid,
         string $statementid
     ): array {
-        global $DB;
-
         $result = ['competencyid' => null, 'planid' => null];
         $plans = api::list_user_plans($user->id);
-
-        // Resolve framework ID from the statement's grouping IRI.
-        $frameworkid = null;
-        if ($frameworkiri !== null) {
-            $fw = $DB->get_record('competency_framework', ['idnumber' => $frameworkiri]);
-            if ($fw) {
-                $frameworkid = (int) $fw->id;
-            } else {
-                mtrace("Framework with idnumber '{$frameworkiri}' not found, ignoring framework filter.");
-            }
-        }
-
-        // Build the set of allowed framework IDs from the allowlist setting.
-        $allowedframeworkids = $this->get_allowed_framework_ids();
 
         foreach ($plans as $plan) {
             $plancompetencies = api::list_plan_competencies($plan);
@@ -842,11 +871,7 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
                 if ($pc->competency->get('idnumber') !== $idnumber) {
                     continue;
                 }
-                $compframeworkid = (int) $pc->competency->get('competencyframeworkid');
-                if ($frameworkid !== null && $compframeworkid !== $frameworkid) {
-                    continue;
-                }
-                if (!in_array($compframeworkid, $allowedframeworkids, true)) {
+                if ((int) $pc->competency->get('competencyframeworkid') !== $frameworkid) {
                     continue;
                 }
                 $competency = $pc->competency;
