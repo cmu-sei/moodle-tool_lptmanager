@@ -70,6 +70,15 @@ if (get_config('core_competency', 'enabled')) {
         'moodle/competency:competencymanage'
     );
     $ADMIN->add('competencies', $temp);
+
+    // Competency framework crosswalks page.
+    $temp = new admin_externalpage(
+        'toollpcrosswalk',
+        get_string('crosswalknavlink', 'tool_lptmanager'),
+        new moodle_url('/admin/tool/lptmanager/crosswalk.php'),
+        'moodle/competency:competencymanage'
+    );
+    $ADMIN->add('competencies', $temp);
 }
 
 // LRS Competency Sync settings.

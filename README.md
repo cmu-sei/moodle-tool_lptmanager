@@ -10,6 +10,7 @@
   - [Exporting Learning Plan Templates](#exporting-learning-plan-templates)
   - [Creating Learning Plan Templates](#creating-learning-plan-templates)
   - [LRS Competency Sync](#lrs-competency-sync)
+  - [Competency framework crosswalks](#competency-framework-crosswalks)
 - [Future Development](#future-development)
 - [Contributing](#contributing)
 - [License](#license)
@@ -105,6 +106,35 @@ The plugin includes a scheduled task that periodically queries an xAPI SQL LRS f
 - It resolves the xAPI object to a Moodle competency by extracting the competency identifier from the TLA extension or IRI path.
 - It finds **all** of the user's learning plans containing that competency and grades it as proficient in each one. This provides multi-plan propagation — a competency assertion from any source (Moodle, Crucible exercises, external systems) is applied across all of the learner's plans.
 - Processed statements are recorded in the `tool_lptmanager_lrs_sync` table to prevent duplicate processing.
+
+### Competency framework crosswalks
+
+A crosswalk says which competency in one framework stands for a competency in another, for example from one NICE Framework version to the next. Importing and reviewing a crosswalk changes no links; the link report shows what moving them would do.
+
+1. In Moodle, navigate to **Site administration**, **Competencies**, **Competency framework crosswalks**.
+2. Under **Import a crosswalk**, choose a .CSV file and click **Import**.
+3. Click **Review mappings** next to a crosswalk to approve or reject its proposed rows.
+4. Click **Link report** to see, for every course, activity, learning plan template, learning plan and question linked to the source framework, whether the link would move automatically, needs a review, or needs a person to pick a target.
+
+#### File format
+
+One row per mapping, with a header row. Columns may be in any order.
+
+| Column | Required | Value |
+| --- | --- | --- |
+| `source_framework` | Yes | ID number of the source framework |
+| `source_idnumber` | Yes | ID number of the source competency |
+| `target_framework` | Yes | ID number of the target framework |
+| `target_idnumber` | Unless deprecated | ID number of the target competency |
+| `relation` | Yes | `exactMatch`, `closeMatch`, `broadMatch`, `narrowMatch`, `relatedMatch` or `deprecated` |
+| `provenance` | No | Where the mapping came from |
+| `confidence` | No | 0 to 1 |
+| `status` | No | `proposed` (default), `approved` or `rejected` |
+| `note` | No | Free text |
+
+Frameworks are matched by ID number, so a crosswalk can be imported before either framework is installed. Importing the same file again updates rows in place, keeps every row someone has already reviewed, and never deletes rows missing from the file. A file with any error imports nothing.
+
+Only an approved `exactMatch` or `closeMatch` to a single installed target moves automatically. A `deprecated`, `rejected` or broader, narrower or related mapping, or a competency with several targets, is left to a person.
 
 ### Notes
 

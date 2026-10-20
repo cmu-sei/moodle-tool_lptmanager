@@ -57,6 +57,10 @@ use core_privacy\local\request\writer;
  * to the learner, so they are reported in the learner's user context. The competency ratings and
  * evidence the sync writes are stored and reported by core_competency.
  *
+ * Crosswalk mappings record who last approved or rejected them. Those are site-wide records, so
+ * the reviews are reported in the system context, and deleting a reviewer's data removes their
+ * name from the mapping but keeps the decision.
+ *
  * @copyright  2026 Carnegie Mellon University
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -66,6 +70,9 @@ class provider implements
     \core_privacy\local\request\plugin\provider {
     /** @var string The sync log table. */
     private const TABLE = 'tool_lptmanager_lrs_sync';
+
+    /** @var string The crosswalk table. */
+    private const CROSSWALK = \tool_lptmanager\crosswalk\store::TABLE;
 
     /**
      * Describe the personal data stored by this plugin.
@@ -85,6 +92,12 @@ class provider implements
             'timecreated' => 'privacy:metadata:lrs_sync:timecreated',
         ], 'privacy:metadata:lrs_sync');
 
+        $collection->add_database_table(self::CROSSWALK, [
+            'reviewedby' => 'privacy:metadata:crosswalk:reviewedby',
+            'status' => 'privacy:metadata:crosswalk:status',
+            'timereviewed' => 'privacy:metadata:crosswalk:timereviewed',
+        ], 'privacy:metadata:crosswalk');
+
         return $collection;
     }
 
@@ -103,6 +116,12 @@ class provider implements
                    AND s.userid = :userid";
         $contextlist->add_from_sql($sql, ['contextlevel' => CONTEXT_USER, 'userid' => $userid]);
 
+        $sql = "SELECT ctx.id
+                  FROM {context} ctx
+                 WHERE ctx.contextlevel = :contextlevel
+                   AND EXISTS (SELECT 1 FROM {" . self::CROSSWALK . "} c WHERE c.reviewedby = :userid)";
+        $contextlist->add_from_sql($sql, ['contextlevel' => CONTEXT_SYSTEM, 'userid' => $userid]);
+
         return $contextlist;
     }
 
@@ -113,6 +132,10 @@ class provider implements
      */
     public static function get_users_in_context(userlist $userlist) {
         $context = $userlist->get_context();
+        if ($context instanceof \context_system) {
+            $userlist->add_from_sql('reviewedby', "SELECT reviewedby FROM {" . self::CROSSWALK . "}", []);
+            return;
+        }
         if (!$context instanceof \context_user) {
             return;
         }
@@ -131,6 +154,10 @@ class provider implements
 
         $userid = $contextlist->get_user()->id;
         foreach ($contextlist->get_contexts() as $context) {
+            if ($context instanceof \context_system) {
+                self::export_crosswalk_reviews($context, $userid);
+                continue;
+            }
             if (!$context instanceof \context_user || (int) $context->instanceid !== (int) $userid) {
                 continue;
             }
@@ -168,6 +195,9 @@ class provider implements
     public static function delete_data_for_all_users_in_context(\context $context) {
         global $DB;
 
+        if ($context instanceof \context_system) {
+            $DB->set_field_select(self::CROSSWALK, 'reviewedby', null, 'reviewedby IS NOT NULL');
+        }
         if ($context instanceof \context_user) {
             $DB->delete_records(self::TABLE, ['userid' => $context->instanceid]);
         }
@@ -183,6 +213,9 @@ class provider implements
 
         $userid = $contextlist->get_user()->id;
         foreach ($contextlist->get_contexts() as $context) {
+            if ($context instanceof \context_system) {
+                $DB->set_field(self::CROSSWALK, 'reviewedby', null, ['reviewedby' => $userid]);
+            }
             if ($context instanceof \context_user && (int) $context->instanceid === (int) $userid) {
                 $DB->delete_records(self::TABLE, ['userid' => $userid]);
             }
@@ -198,6 +231,11 @@ class provider implements
         global $DB;
 
         $context = $userlist->get_context();
+        if ($context instanceof \context_system && $userlist->get_userids()) {
+            [$insql, $params] = $DB->get_in_or_equal($userlist->get_userids(), SQL_PARAMS_NAMED);
+            $DB->set_field_select(self::CROSSWALK, 'reviewedby', null, "reviewedby {$insql}", $params);
+            return;
+        }
         if (!$context instanceof \context_user) {
             return;
         }
@@ -206,5 +244,38 @@ class provider implements
         if (in_array((int) $context->instanceid, array_map('intval', $userlist->get_userids()), true)) {
             $DB->delete_records(self::TABLE, ['userid' => $context->instanceid]);
         }
+    }
+
+    /**
+     * Export the crosswalk mappings a user last reviewed.
+     *
+     * @param \context $context The system context.
+     * @param int $userid The reviewer.
+     */
+    private static function export_crosswalk_reviews(\context $context, int $userid): void {
+        global $DB;
+
+        $records = $DB->get_records(self::CROSSWALK, ['reviewedby' => $userid], 'timereviewed, id');
+        if (!$records) {
+            return;
+        }
+
+        $reviews = [];
+        foreach ($records as $record) {
+            $reviews[] = (object) [
+                'sourceframework' => $record->sourceframework,
+                'sourceidnumber' => $record->sourceidnumber,
+                'targetframework' => $record->targetframework,
+                'targetidnumber' => $record->targetidnumber,
+                'relation' => $record->relation,
+                'status' => $record->status,
+                'timereviewed' => transform::datetime($record->timereviewed),
+            ];
+        }
+
+        writer::with_context($context)->export_data(
+            [get_string('privacy:path:crosswalks', 'tool_lptmanager')],
+            (object) ['reviews' => $reviews]
+        );
     }
 }

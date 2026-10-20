@@ -103,5 +103,35 @@ function xmldb_tool_lptmanager_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026042101, 'tool', 'lptmanager');
     }
 
+    if ($oldversion < 2026102001) {
+        $table = new xmldb_table('tool_lptmanager_crosswalk');
+
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('sourceframework', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('sourceidnumber', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('targetframework', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('targetidnumber', XMLDB_TYPE_CHAR, '100', null, null, null, null);
+        $table->add_field('relation', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('provenance', XMLDB_TYPE_CHAR, '100', null, null, null, null);
+        $table->add_field('confidence', XMLDB_TYPE_NUMBER, '3, 2', null, null, null, null);
+        $table->add_field('status', XMLDB_TYPE_CHAR, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('note', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('reviewedby', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('timereviewed', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('reviewedby', XMLDB_KEY_FOREIGN, ['reviewedby'], 'user', ['id']);
+
+        $table->add_index('source', XMLDB_INDEX_NOTUNIQUE, ['sourceframework', 'targetframework', 'sourceidnumber']);
+
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026102001, 'tool', 'lptmanager');
+    }
+
     return true;
 }

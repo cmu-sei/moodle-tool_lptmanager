@@ -93,9 +93,79 @@ final class provider_test extends provider_testcase {
         $collection = provider::get_metadata(new collection('tool_lptmanager'));
         $items = $collection->get_collection();
 
-        $this->assertCount(1, $items);
+        $this->assertCount(2, $items);
         $this->assertEquals('tool_lptmanager_lrs_sync', $items[0]->get_name());
         $this->assertArrayHasKey('userid', $items[0]->get_privacy_fields());
+        $this->assertEquals('tool_lptmanager_crosswalk', $items[1]->get_name());
+        $this->assertArrayHasKey('reviewedby', $items[1]->get_privacy_fields());
+    }
+
+    /**
+     * Insert a crosswalk mapping, reviewed by a user if given.
+     *
+     * @param string $idnumber Source competency ID number.
+     * @param int|null $reviewer The user who approved it.
+     * @return int Row id.
+     */
+    private function add_crosswalk_row(string $idnumber, ?int $reviewer): int {
+        global $DB;
+
+        return $DB->insert_record('tool_lptmanager_crosswalk', (object) [
+            'sourceframework' => 'FW-1',
+            'sourceidnumber' => $idnumber,
+            'targetframework' => 'FW-2',
+            'targetidnumber' => $idnumber,
+            'relation' => 'exactMatch',
+            'status' => $reviewer ? 'approved' : 'proposed',
+            'reviewedby' => $reviewer,
+            'timereviewed' => $reviewer ? time() : null,
+            'timecreated' => time(),
+            'timemodified' => time(),
+        ]);
+    }
+
+    public function test_crosswalk_reviews_are_reported_in_the_system_context(): void {
+        $this->resetAfterTest();
+        $reviewer = $this->getDataGenerator()->create_user();
+        $other = $this->getDataGenerator()->create_user();
+        $this->add_crosswalk_row('K0001', $reviewer->id);
+        $this->add_crosswalk_row('K0002', null);
+        $system = \context_system::instance();
+
+        $contextids = provider::get_contexts_for_userid($reviewer->id)->get_contextids();
+        $this->assertEquals([$system->id], array_values($contextids));
+        $this->assertEmpty(provider::get_contexts_for_userid($other->id)->get_contextids());
+
+        $userlist = new userlist($system, 'tool_lptmanager');
+        provider::get_users_in_context($userlist);
+        $this->assertEquals([$reviewer->id], $userlist->get_userids());
+
+        provider::export_user_data(new approved_contextlist($reviewer, 'tool_lptmanager', [$system->id]));
+        $data = writer::with_context($system)->get_data([get_string('privacy:path:crosswalks', 'tool_lptmanager')]);
+        $this->assertCount(1, $data->reviews);
+        $this->assertEquals('K0001', $data->reviews[0]->sourceidnumber);
+        $this->assertEquals('approved', $data->reviews[0]->status);
+    }
+
+    public function test_deleting_a_reviewer_keeps_the_decision(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $reviewer = $this->getDataGenerator()->create_user();
+        $other = $this->getDataGenerator()->create_user();
+        $mine = $this->add_crosswalk_row('K0001', $reviewer->id);
+        $theirs = $this->add_crosswalk_row('K0002', $other->id);
+        $system = \context_system::instance();
+
+        provider::delete_data_for_user(new approved_contextlist($reviewer, 'tool_lptmanager', [$system->id]));
+        $row = $DB->get_record('tool_lptmanager_crosswalk', ['id' => $mine]);
+        $this->assertNull($row->reviewedby);
+        $this->assertEquals('approved', $row->status);
+        $this->assertNotEmpty($row->timereviewed);
+        $this->assertEquals($other->id, $DB->get_field('tool_lptmanager_crosswalk', 'reviewedby', ['id' => $theirs]));
+
+        provider::delete_data_for_users(new approved_userlist($system, 'tool_lptmanager', [$other->id]));
+        $this->assertNull($DB->get_field('tool_lptmanager_crosswalk', 'reviewedby', ['id' => $theirs]));
+        $this->assertEquals('approved', $DB->get_field('tool_lptmanager_crosswalk', 'status', ['id' => $theirs]));
     }
 
     public function test_get_contexts_for_userid(): void {
