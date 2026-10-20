@@ -95,15 +95,19 @@ The plugin includes a scheduled task that periodically queries an xAPI SQL LRS f
 3. Configure the **LRS endpoint** (e.g., `http://lrsql:9274/xapi`).
 4. Enter the **LRS API key** and **LRS API secret** for Basic authentication.
 5. Set the **Competency IRI prefix** to match how competency identifiers appear in xAPI statement object IRIs (e.g., `https://niccs.cisa.gov/workforce-development/nice-framework/ksat/`). The remainder after stripping this prefix is matched against Moodle competency `idnumber` fields.
+6. List the **Trusted asserting sources** and **Trusted validating sources**: the LRS credentials whose statements may grade plans, one per line as `<authority homePage> <authority name>`. SQL LRS stamps every statement's `authority` from the credential that wrote it, so copy the pair from a statement the source wrote. Give each source (Moodle, Blueprint, ...) its own LRS credential, or they cannot be told apart.
+7. List the **Learner identity issuers**: the identity providers whose accounts may be matched to Moodle users, e.g. the Keycloak realm issuer `https://keycloak.example.com/realms/crucible`.
+
+The sync grades nothing until a trusted source and an identity issuer are configured. Statements from untrusted sources are skipped, not retried; after adding a source, clear the `lrs_last_sync` config value to re-read the LRS (already-applied statements are not applied twice).
 
 #### How it works
 
 - A scheduled task runs every 15 minutes (configurable in **Site administration > Server > Scheduled tasks**).
-- The task fetches xAPI statements with `asserted` or `validated` verbs from the configured LRS.
-- For `asserted` statements, the learner is the actor. For `validated` statements (instructor-rated), the learner is resolved from the TLA `learner` context extension.
-- The learner is matched to a Moodle user via `account.name` matching `user.idnumber` (Keycloak sub), or `mbox` matching `user.email`.
+- The task fetches xAPI statements with `asserted` or `validated` verbs from the configured LRS, and skips any whose `authority` is not a trusted source for that verb.
+- For `asserted` statements, the learner is the actor. For `validated` statements (instructor-rated), the learner is resolved from the TLA `learner` context extension; a validated statement without it is skipped.
+- The learner is matched to a Moodle user only when `account.homePage` is a configured identity issuer, by `account.name` matching `user.idnumber` (Keycloak sub). Email (`mbox`) is not used.
 - It resolves the xAPI object to a Moodle competency by extracting the competency identifier from the TLA extension or IRI path.
-- It finds **all** of the user's learning plans containing that competency and grades it as proficient in each one. This provides multi-plan propagation — a competency assertion from any source (Moodle, Crucible exercises, external systems) is applied across all of the learner's plans.
+- It finds **all** of the user's learning plans containing that competency and grades it as proficient in each one. This provides multi-plan propagation — a competency assertion from any trusted source (Moodle, Crucible exercises, external systems) is applied across all of the learner's plans.
 - Processed statements are recorded in the `tool_lptmanager_lrs_sync` table to prevent duplicate processing.
 
 ### Notes

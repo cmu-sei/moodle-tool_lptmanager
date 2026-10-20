@@ -54,6 +54,18 @@ use Psr\Http\Message\RequestInterface;
  * Tests for the LRS competency sync task.
  */
 final class sync_lrs_competencies_test extends \advanced_testcase {
+    /** @var string LRS authority homePage the test LRS stamps. */
+    private const LRS = 'https://lrs.example.test';
+
+    /** @var string Credential the test Moodle writes with. */
+    private const MOODLE_CREDENTIAL = '019e73d0-8404-888f-aa9b-9e604f7e704e';
+
+    /** @var string Learner identity issuer. */
+    private const ISSUER = 'https://keycloak.example.test/realms/crucible';
+
+    /** @var string Allowed competency framework. */
+    private const FRAMEWORK = 'https://niccs.example.test/framework/nice';
+
     /**
      * Build a task whose HTTP client answers with a canned response.
      *
@@ -150,6 +162,7 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         set_config('lrs_endpoint', 'https://lrs.example.test/xapi', 'tool_lptmanager');
         set_config('lrs_api_key', 'key', 'tool_lptmanager');
         set_config('lrs_api_secret', 'secret', 'tool_lptmanager');
+        $this->configure_trust();
         set_config('lrs_last_sync', $lastsync, 'tool_lptmanager');
 
         $task = $this->getMockBuilder(sync_lrs_competencies::class)
@@ -177,6 +190,7 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         set_config('lrs_endpoint', 'https://lrs.example.test/xapi', 'tool_lptmanager');
         set_config('lrs_api_key', 'key', 'tool_lptmanager');
         set_config('lrs_api_secret', 'secret', 'tool_lptmanager');
+        $this->configure_trust();
 
         $task = $this->getMockBuilder(sync_lrs_competencies::class)
             ->onlyMethods(['get_sync_start_time', 'sync_verb'])
@@ -202,6 +216,7 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         set_config('lrs_endpoint', 'https://lrs.example.test/xapi', 'tool_lptmanager');
         set_config('lrs_api_key', 'key', 'tool_lptmanager');
         set_config('lrs_api_secret', 'secret', 'tool_lptmanager');
+        $this->configure_trust();
 
         $task = $this->getMockBuilder(sync_lrs_competencies::class)
             ->onlyMethods(['get_sync_start_time', 'sync_verb'])
@@ -225,6 +240,7 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
 
     public function test_sync_verb_records_progress_when_page_limit_is_reached(): void {
         $this->resetAfterTest(true);
+        $this->configure_trust();
         set_config('lrs_max_pages_per_verb', 1, 'tool_lptmanager');
         $response = (object) [
             'statements' => [(object) [
@@ -264,6 +280,7 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
 
     public function test_sync_verb_stops_at_a_pagination_url_on_another_host(): void {
         $this->resetAfterTest(true);
+        $this->configure_trust();
         $requested = [];
         $task = $this->getMockBuilder(sync_lrs_competencies::class)
             ->onlyMethods(['fetch_statements'])
@@ -287,6 +304,7 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
 
     public function test_sync_verb_stops_at_a_pagination_url_with_a_foreign_scheme(): void {
         $this->resetAfterTest(true);
+        $this->configure_trust();
         $requested = [];
         $task = $this->getMockBuilder(sync_lrs_competencies::class)
             ->onlyMethods(['fetch_statements'])
@@ -308,6 +326,7 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
 
     public function test_sync_verb_resolves_a_relative_pagination_url(): void {
         $this->resetAfterTest(true);
+        $this->configure_trust();
         $requested = [];
         $responses = [
             (object) ['statements' => [], 'more' => '/xapi/statements?cursor=next'],
@@ -330,6 +349,7 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
 
     public function test_sync_verb_follows_a_pagination_url_on_the_configured_host(): void {
         $this->resetAfterTest(true);
+        $this->configure_trust();
         $requested = [];
         $more = 'https://lrs.example.test/xapi/statements?cursor=next';
         $responses = [
@@ -421,6 +441,284 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
 
         $this->assertSame([(int) $allowedframework->get('id')], $allowed);
         $this->assertNotContains((int) $otherframework->get('id'), $allowed);
+    }
+
+    public function test_sync_without_trusted_sources_fetches_nothing(): void {
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/No trusted LRS sources are configured; nothing will be synced/');
+        $this->setAdminUser();
+
+        $lastsync = '2026-08-26T18:45:00+00:00';
+        set_config('enable_lrs_sync', 1, 'tool_lptmanager');
+        set_config('lrs_endpoint', 'https://lrs.example.test/xapi', 'tool_lptmanager');
+        set_config('lrs_api_key', 'key', 'tool_lptmanager');
+        set_config('lrs_api_secret', 'secret', 'tool_lptmanager');
+        set_config('lrs_identity_issuers', self::ISSUER, 'tool_lptmanager');
+        set_config('lrs_last_sync', $lastsync, 'tool_lptmanager');
+
+        $task = $this->getMockBuilder(sync_lrs_competencies::class)
+            ->onlyMethods(['sync_verb'])
+            ->getMock();
+        $task->expects($this->never())->method('sync_verb');
+
+        $task->execute();
+
+        // Keeping the checkpoint means statements written meanwhile are read once sources are trusted.
+        $this->assertSame($lastsync, get_config('tool_lptmanager', 'lrs_last_sync'));
+    }
+
+    public function test_sync_without_identity_issuers_fetches_nothing(): void {
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/No learner identity issuers are configured/');
+        $this->setAdminUser();
+        set_config('enable_lrs_sync', 1, 'tool_lptmanager');
+        set_config('lrs_endpoint', 'https://lrs.example.test/xapi', 'tool_lptmanager');
+        set_config('lrs_api_key', 'key', 'tool_lptmanager');
+        set_config('lrs_api_secret', 'secret', 'tool_lptmanager');
+        set_config('lrs_trusted_asserters', self::LRS . ' ' . self::MOODLE_CREDENTIAL, 'tool_lptmanager');
+
+        $task = $this->getMockBuilder(sync_lrs_competencies::class)
+            ->onlyMethods(['sync_verb'])
+            ->getMock();
+        $task->expects($this->never())->method('sync_verb');
+
+        $task->execute();
+    }
+
+    public function test_sync_verb_skips_a_verb_with_no_trusted_source(): void {
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/No trusted LRS sources are configured for .*asserted; skipping it/');
+        set_config('lrs_trusted_validators', self::LRS . ' ' . self::MOODLE_CREDENTIAL, 'tool_lptmanager');
+
+        $task = $this->getMockBuilder(sync_lrs_competencies::class)
+            ->onlyMethods(['create_client'])
+            ->getMock();
+        $task->expects($this->never())->method('create_client');
+
+        $result = $this->run_sync_verb($task);
+
+        $this->assertSame(['count' => 0, 'checkpoint' => null, 'complete' => true], $result);
+    }
+
+    public function test_an_assertion_from_a_trusted_source_is_applied(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/Graded competency T0023/');
+        $this->configure_trust();
+        $learner = $this->create_learner_with_plan();
+
+        $this->assertTrue($this->process_statement($this->asserted_statement(), sync_lrs_competencies::VERB_ASSERTED));
+
+        $this->assertTrue($DB->record_exists('tool_lptmanager_lrs_sync', [
+            'statementid' => 'statement-1',
+            'userid' => $learner->id,
+        ]));
+    }
+
+    public function test_an_assertion_from_an_untrusted_source_is_skipped(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/not written by a trusted source for .*asserted/');
+        $this->configure_trust();
+        $this->create_learner_with_plan();
+        $statement = $this->asserted_statement();
+
+        // A cmi5 player, a browser client or any other holder of a write credential.
+        $statement->authority->account->name = 'cmi5-player-credential';
+
+        $this->assertFalse($this->process_statement($statement, sync_lrs_competencies::VERB_ASSERTED));
+        $this->assertFalse($DB->record_exists('tool_lptmanager_lrs_sync', ['statementid' => 'statement-1']));
+    }
+
+    public function test_an_assertion_without_an_authority_is_skipped(): void {
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/not written by a trusted source/');
+        $this->configure_trust();
+        $this->create_learner_with_plan();
+        $statement = $this->asserted_statement();
+        unset($statement->authority);
+
+        $this->assertFalse($this->process_statement($statement, sync_lrs_competencies::VERB_ASSERTED));
+    }
+
+    public function test_a_group_authority_is_trusted_through_a_listed_member(): void {
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/Graded competency T0023/');
+        $this->configure_trust();
+        $this->create_learner_with_plan();
+        $statement = $this->asserted_statement();
+
+        // The shape SQL LRS stamps for an OIDC client acting for a user.
+        $statement->authority = (object) [
+            'objectType' => 'Group',
+            'member' => [
+                (object) ['account' => (object) ['homePage' => self::LRS . '/', 'name' => self::MOODLE_CREDENTIAL]],
+                (object) ['account' => (object) ['homePage' => self::ISSUER, 'name' => 'someone']],
+            ],
+        ];
+
+        $this->assertTrue($this->process_statement($statement, sync_lrs_competencies::VERB_ASSERTED));
+    }
+
+    public function test_an_asserting_source_is_not_trusted_to_validate(): void {
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/not written by a trusted source for .*validated/');
+        $this->configure_trust();
+        $this->create_learner_with_plan();
+        $statement = $this->validated_statement();
+        $statement->authority->account->name = 'blueprint-credential';
+
+        $this->assertFalse($this->process_statement($statement, sync_lrs_competencies::VERB_VALIDATED));
+    }
+
+    public function test_a_validation_from_a_trusted_source_grades_the_named_learner(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/Graded competency T0023/');
+        $this->configure_trust();
+        $learner = $this->create_learner_with_plan();
+
+        $this->assertTrue($this->process_statement($this->validated_statement(), sync_lrs_competencies::VERB_VALIDATED));
+
+        $this->assertTrue($DB->record_exists('tool_lptmanager_lrs_sync', [
+            'statementid' => 'statement-1',
+            'userid' => $learner->id,
+        ]));
+    }
+
+    public function test_a_validation_without_a_learner_does_not_grade_the_validator(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/has no learner extension, skipping/');
+        $this->configure_trust();
+        $this->create_learner_with_plan();
+        $statement = $this->validated_statement();
+        unset($statement->context->extensions->{sync_lrs_competencies::EXT_LEARNER});
+
+        // The actor is the instructor. Falling back to it would grade their plan instead.
+        $statement->actor = $this->account_agent(self::ISSUER, 'learner-sub');
+
+        $this->assertFalse($this->process_statement($statement, sync_lrs_competencies::VERB_VALIDATED));
+        $this->assertFalse($DB->record_exists('tool_lptmanager_lrs_sync', ['statementid' => 'statement-1']));
+    }
+
+    public function test_a_learner_from_an_untrusted_issuer_is_not_resolved(): void {
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/identity issuer .https:\/\/moodle\.example\.test. is not trusted/');
+        $this->configure_trust();
+        $this->create_learner_with_plan();
+        $statement = $this->asserted_statement();
+
+        // The default logstore_xapi actor: a Moodle user id under the Moodle site URL, which would
+        // otherwise match any user whose ID number happens to be that value.
+        $statement->actor = $this->account_agent('https://moodle.example.test', 'learner-sub');
+
+        $this->assertFalse($this->process_statement($statement, sync_lrs_competencies::VERB_ASSERTED));
+    }
+
+    public function test_a_learner_identified_only_by_email_is_not_resolved(): void {
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex('/Learner has no account identity/');
+        $this->configure_trust();
+        $learner = $this->create_learner_with_plan();
+        $statement = $this->asserted_statement();
+        $statement->actor = (object) ['objectType' => 'Agent', 'mbox' => 'mailto:' . $learner->email];
+
+        $this->assertFalse($this->process_statement($statement, sync_lrs_competencies::VERB_ASSERTED));
+    }
+
+    /**
+     * Trust the test Moodle credential to assert and validate, and the test issuer for learners.
+     */
+    private function configure_trust(): void {
+        set_config('lrs_trusted_asserters', self::LRS . ' ' . self::MOODLE_CREDENTIAL . "\n"
+            . self::LRS . ' blueprint-credential', 'tool_lptmanager');
+        set_config('lrs_trusted_validators', self::LRS . '/ ' . self::MOODLE_CREDENTIAL, 'tool_lptmanager');
+        set_config('lrs_identity_issuers', self::ISSUER . '/', 'tool_lptmanager');
+    }
+
+    /**
+     * Create a learner whose active plan holds competency T0023 in an allowed framework.
+     *
+     * @return \stdClass The learner.
+     */
+    private function create_learner_with_plan(): \stdClass {
+        $this->setAdminUser();
+        $generator = $this->getDataGenerator()->get_plugin_generator('core_competency');
+        $framework = $generator->create_framework(['idnumber' => self::FRAMEWORK]);
+        $competency = $generator->create_competency([
+            'competencyframeworkid' => $framework->get('id'),
+            'idnumber' => 'T0023',
+        ]);
+        $learner = $this->getDataGenerator()->create_user(['idnumber' => 'learner-sub']);
+        $plan = $generator->create_plan(['userid' => $learner->id, 'status' => \core_competency\plan::STATUS_ACTIVE]);
+        $generator->create_plan_competency(['planid' => $plan->get('id'), 'competencyid' => $competency->get('id')]);
+        set_config('lrs_sync_frameworks', self::FRAMEWORK, 'tool_lptmanager');
+        return $learner;
+    }
+
+    /**
+     * Build an xAPI agent identified by an account.
+     *
+     * @param string $homepage Account homePage.
+     * @param string $name Account name.
+     * @return object
+     */
+    private function account_agent(string $homepage, string $name): object {
+        return (object) ['objectType' => 'Agent', 'account' => (object) ['homePage' => $homepage, 'name' => $name]];
+    }
+
+    /**
+     * Build an asserted statement about the test learner, written by the test Moodle credential.
+     *
+     * @return object
+     */
+    private function asserted_statement(): object {
+        return (object) [
+            'id' => 'statement-1',
+            'actor' => $this->account_agent(self::ISSUER, 'learner-sub'),
+            'object' => (object) [
+                'id' => 'https://elsewhere.example.test/activities/lab-4',
+                'definition' => (object) [
+                    'extensions' => (object) [
+                        'https://w3id.org/xapi/tla/extensions/competency-identifier' => 'T0023',
+                    ],
+                ],
+            ],
+            'context' => (object) ['extensions' => new \stdClass()],
+            'authority' => $this->account_agent(self::LRS, self::MOODLE_CREDENTIAL),
+        ];
+    }
+
+    /**
+     * Build a validated statement: an instructor validating the test learner.
+     *
+     * @return object
+     */
+    private function validated_statement(): object {
+        $statement = $this->asserted_statement();
+        $statement->actor = $this->account_agent(self::ISSUER, 'instructor-sub');
+        $statement->context->extensions->{sync_lrs_competencies::EXT_LEARNER} =
+            $this->account_agent(self::ISSUER, 'learner-sub');
+        return $statement;
+    }
+
+    /**
+     * Run the protected process_statement() method.
+     *
+     * @param object $statement The xAPI statement.
+     * @param string $verb The verb IRI.
+     * @return bool Whether the statement was applied.
+     */
+    private function process_statement(object $statement, string $verb): bool {
+        $process = \Closure::bind(
+            static function (sync_lrs_competencies $task, object $statement, string $verb): bool {
+                return $task->process_statement($statement, $verb);
+            },
+            null,
+            sync_lrs_competencies::class
+        );
+        return $process(new sync_lrs_competencies(), $statement, $verb);
     }
 
     /**
