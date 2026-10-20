@@ -79,11 +79,8 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     /** @var int[]|null Framework IDs the sync may grade, or null before the allowlist is read. */
     private ?array $allowedframeworkids = null;
 
-    /** @var array<string, array<string, true>> Trusted authority keys per verb, filled as each verb is read. */
+    /** @var array<string, array<string, string[]>> Per verb, trusted authority keys and the learner homePages each may name. */
     private array $trustedauthorities = [];
-
-    /** @var string[]|null Normalised learner identity issuers, or null before the setting is read. */
-    private ?array $identityissuers = null;
 
     /**
      * Get a descriptive name for this task.
@@ -119,10 +116,6 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
 
         if (!$this->get_trusted_authorities(self::VERB_ASSERTED) && !$this->get_trusted_authorities(self::VERB_VALIDATED)) {
             mtrace('No trusted LRS sources are configured; nothing will be synced.');
-            return;
-        }
-        if (!$this->get_identity_issuers()) {
-            mtrace('No learner identity issuers are configured; nothing will be synced.');
             return;
         }
 
@@ -471,8 +464,10 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         // The LRS stamps the authority from the credential that wrote the statement, so it names
         // the source and cannot be supplied by the client. Anyone holding a write credential can
         // otherwise pick the learner and the competency.
-        if (!$this->is_trusted_authority($statement->authority ?? null, $verb)) {
-            mtrace("Statement {$statementid} was not written by a trusted source for {$verb}, skipping.");
+        $learnerhomepages = $this->get_learner_homepages_for_authority($statement->authority ?? null, $verb);
+        if ($learnerhomepages === null) {
+            $authority = $this->describe_authority($statement->authority ?? null);
+            mtrace("Statement {$statementid} was written by {$authority}, not a trusted source for {$verb}, skipping.");
             return false;
         }
 
@@ -489,7 +484,7 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         } else {
             $learneragent = $statement->actor ?? null;
         }
-        $user = $this->resolve_actor($learneragent);
+        $user = $this->resolve_actor($learneragent, $learnerhomepages);
         if ($user === null) {
             return false;
         }
@@ -554,15 +549,16 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     /**
      * Resolve an xAPI actor to a Moodle user.
      *
-     * Only an account issued by a configured identity provider is accepted, and its name is
-     * matched to user.idnumber (the Keycloak sub). Without the issuer check a Moodle user id or
-     * any other system's account name could collide with someone's idnumber. Email (mbox) is not
-     * used: no Crucible app identifies learners by it.
+     * Only an account under a homePage the source may name is accepted, and its name is matched
+     * to user.idnumber (the Keycloak sub). Without that check a Moodle user id or any other
+     * system's account name could collide with someone's idnumber. Email (mbox) is not used: no
+     * Crucible app identifies learners by it.
      *
      * @param object|null $actor The xAPI actor object.
+     * @param string[] $learnerhomepages Normalised account homePages the source may name learners under.
      * @return object|null The Moodle user record or null.
      */
-    private function resolve_actor(?object $actor): ?object {
+    private function resolve_actor(?object $actor, array $learnerhomepages): ?object {
         global $DB;
 
         if ($actor === null) {
@@ -578,8 +574,8 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
             return null;
         }
 
-        if (!in_array($this->normalise_url($homepage), $this->get_identity_issuers(), true)) {
-            mtrace("Learner identity issuer '{$homepage}' is not trusted.");
+        if (!in_array($this->normalise_url($homepage), $learnerhomepages, true)) {
+            mtrace("Learner account homePage '{$homepage}' is not one this source may name learners under.");
             return null;
         }
 
@@ -593,45 +589,63 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     }
 
     /**
-     * Whether a statement authority is a trusted source for a verb.
+     * Find the learner homePages a statement's authority may name for a verb.
      *
-     * An Agent authority must be listed itself. A Group authority (an OAuth client acting for a
-     * user) is trusted when any member is listed, which lets the client's account vouch for it.
+     * Only an Agent authority with an account is accepted. Group authorities (an OIDC client
+     * acting for a user) are refused until a writer needs them: trusting one safely means
+     * deciding which member is the client, and no source writes that way today.
      *
      * @param mixed $authority The statement's authority.
      * @param string $verb The verb IRI.
-     * @return bool
+     * @return string[]|null The learner homePages, or null if the authority is not trusted.
      */
-    private function is_trusted_authority($authority, string $verb): bool {
+    private function get_learner_homepages_for_authority($authority, string $verb): ?array {
+        if (!is_object($authority) || ($authority->objectType ?? 'Agent') !== 'Agent') {
+            return null;
+        }
+
+        $account = $authority->account ?? null;
+        $homepage = is_object($account) ? ($account->homePage ?? null) : null;
+        $name = is_object($account) ? ($account->name ?? null) : null;
+        if (!is_string($homepage) || !is_string($name)) {
+            return null;
+        }
+
+        return $this->get_trusted_authorities($verb)[$this->get_authority_key($homepage, $name)] ?? null;
+    }
+
+    /**
+     * Describe a statement authority for the task log, so an admin can copy it into the settings.
+     *
+     * @param mixed $authority The statement's authority.
+     * @return string
+     */
+    private function describe_authority($authority): string {
         if (!is_object($authority)) {
-            return false;
+            return 'no authority';
         }
-
-        $agents = ($authority->objectType ?? 'Agent') === 'Group' ? ($authority->member ?? null) : [$authority];
-        if (!is_array($agents)) {
-            return false;
+        if (($authority->objectType ?? 'Agent') === 'Group') {
+            return 'a Group authority';
         }
-
-        $trusted = $this->get_trusted_authorities($verb);
-        foreach ($agents as $agent) {
-            $account = is_object($agent) ? ($agent->account ?? null) : null;
-            $homepage = is_object($account) ? ($account->homePage ?? null) : null;
-            $name = is_object($account) ? ($account->name ?? null) : null;
-            if (is_string($homepage) && is_string($name) && isset($trusted[$this->get_authority_key($homepage, $name)])) {
-                return true;
-            }
+        $account = $authority->account ?? null;
+        $homepage = is_object($account) ? ($account->homePage ?? null) : null;
+        $name = is_object($account) ? ($account->name ?? null) : null;
+        if (!is_string($homepage) || !is_string($name)) {
+            return 'an authority without an account';
         }
-        return false;
+        return "'{$homepage} {$name}'";
     }
 
     /**
      * Read the trusted sources configured for a verb.
      *
-     * Each line is an authority account as the LRS stamps it: the homePage, whitespace, then the
-     * name. An empty list trusts no source.
+     * Each line names a credential as the LRS stamps its authority (homePage, then name) and the
+     * account homePage of the learners it may grade: "this credential may grade learners
+     * identified under this homePage". A credential trusted for several learner homePages takes
+     * one line each. An empty list trusts no source.
      *
      * @param string $verb The verb IRI.
-     * @return array<string, true> Trusted authority keys.
+     * @return array<string, string[]> Trusted authority keys and their normalised learner homePages.
      */
     private function get_trusted_authorities(string $verb): array {
         if (isset($this->trustedauthorities[$verb])) {
@@ -641,34 +655,19 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         $settingname = $verb === self::VERB_VALIDATED ? 'lrs_trusted_validators' : 'lrs_trusted_asserters';
         $lines = array_filter(array_map('trim', explode("\n", (string) get_config('tool_lptmanager', $settingname))));
 
-        $keys = [];
+        $trusted = [];
         foreach ($lines as $line) {
             $parts = preg_split('/\s+/', $line);
-            if (count($parts) !== 2) {
-                mtrace("Ignoring trusted source '{$line}' in {$settingname}: expected a homePage and a name.");
+            if (count($parts) !== 3) {
+                mtrace("Ignoring trusted source '{$line}' in {$settingname}: expected an authority homePage, "
+                    . "an authority name and a learner homePage.");
                 continue;
             }
-            $keys[$this->get_authority_key($parts[0], $parts[1])] = true;
+            $trusted[$this->get_authority_key($parts[0], $parts[1])][] = $this->normalise_url($parts[2]);
         }
 
-        $this->trustedauthorities[$verb] = $keys;
-        return $keys;
-    }
-
-    /**
-     * Read the configured learner identity issuers.
-     *
-     * @return string[] Normalised issuer URLs, empty if none are configured.
-     */
-    private function get_identity_issuers(): array {
-        if ($this->identityissuers !== null) {
-            return $this->identityissuers;
-        }
-
-        $setting = get_config('tool_lptmanager', 'lrs_identity_issuers');
-        $lines = array_filter(array_map('trim', explode("\n", (string) $setting)));
-        $this->identityissuers = array_values(array_map([$this, 'normalise_url'], $lines));
-        return $this->identityissuers;
+        $this->trustedauthorities[$verb] = $trusted;
+        return $trusted;
     }
 
     /**

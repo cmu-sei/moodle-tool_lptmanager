@@ -162,11 +162,4 @@ $settings->add(new \admin_setting_configtextarea(
     ''
 ));
 
-$settings->add(new \admin_setting_configtextarea(
-    'tool_lptmanager/lrs_identity_issuers',
-    get_string('lrsidentityissuers', 'tool_lptmanager'),
-    get_string('lrsidentityissuers_desc', 'tool_lptmanager'),
-    ''
-));
-
 $ADMIN->add('tools', $settings);

@@ -60,8 +60,11 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
     /** @var string Credential the test Moodle writes with. */
     private const MOODLE_CREDENTIAL = '019e73d0-8404-888f-aa9b-9e604f7e704e';
 
-    /** @var string Learner identity issuer. */
+    /** @var string Realm the trusted Moodle credential identifies learners under. */
     private const ISSUER = 'https://keycloak.example.test/realms/crucible';
+
+    /** @var string Realm only the Blueprint credential identifies learners under. */
+    private const OTHER_ISSUER = 'https://keycloak.example.test/realms/other';
 
     /** @var string Allowed competency framework. */
     private const FRAMEWORK = 'https://niccs.example.test/framework/nice';
@@ -453,7 +456,6 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         set_config('lrs_endpoint', 'https://lrs.example.test/xapi', 'tool_lptmanager');
         set_config('lrs_api_key', 'key', 'tool_lptmanager');
         set_config('lrs_api_secret', 'secret', 'tool_lptmanager');
-        set_config('lrs_identity_issuers', self::ISSUER, 'tool_lptmanager');
         set_config('lrs_last_sync', $lastsync, 'tool_lptmanager');
 
         $task = $this->getMockBuilder(sync_lrs_competencies::class)
@@ -467,28 +469,26 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         $this->assertSame($lastsync, get_config('tool_lptmanager', 'lrs_last_sync'));
     }
 
-    public function test_sync_without_identity_issuers_fetches_nothing(): void {
+    public function test_a_trusted_source_without_a_learner_homepage_is_ignored(): void {
         $this->resetAfterTest(true);
-        $this->expectOutputRegex('/No learner identity issuers are configured/');
-        $this->setAdminUser();
-        set_config('enable_lrs_sync', 1, 'tool_lptmanager');
-        set_config('lrs_endpoint', 'https://lrs.example.test/xapi', 'tool_lptmanager');
-        set_config('lrs_api_key', 'key', 'tool_lptmanager');
-        set_config('lrs_api_secret', 'secret', 'tool_lptmanager');
+        $this->expectOutputRegex('/Ignoring trusted source .* expected an authority homePage, an authority name and a learner/');
+
+        // A credential with no learner homePage would leave the source free to name any learner.
         set_config('lrs_trusted_asserters', self::LRS . ' ' . self::MOODLE_CREDENTIAL, 'tool_lptmanager');
-
         $task = $this->getMockBuilder(sync_lrs_competencies::class)
-            ->onlyMethods(['sync_verb'])
+            ->onlyMethods(['create_client'])
             ->getMock();
-        $task->expects($this->never())->method('sync_verb');
+        $task->expects($this->never())->method('create_client');
 
-        $task->execute();
+        $result = $this->run_sync_verb($task);
+
+        $this->assertSame(['count' => 0, 'checkpoint' => null, 'complete' => true], $result);
     }
 
     public function test_sync_verb_skips_a_verb_with_no_trusted_source(): void {
         $this->resetAfterTest(true);
         $this->expectOutputRegex('/No trusted LRS sources are configured for .*asserted; skipping it/');
-        set_config('lrs_trusted_validators', self::LRS . ' ' . self::MOODLE_CREDENTIAL, 'tool_lptmanager');
+        set_config('lrs_trusted_validators', self::LRS . ' ' . self::MOODLE_CREDENTIAL . ' ' . self::ISSUER, 'tool_lptmanager');
 
         $task = $this->getMockBuilder(sync_lrs_competencies::class)
             ->onlyMethods(['create_client'])
@@ -518,7 +518,8 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
     public function test_an_assertion_from_an_untrusted_source_is_skipped(): void {
         global $DB;
         $this->resetAfterTest(true);
-        $this->expectOutputRegex('/not written by a trusted source for .*asserted/');
+        // The log names the skipped authority so an admin can copy it into the settings.
+        $this->expectOutputRegex("/written by 'https:\\/\\/lrs\\.example\\.test cmi5-player-credential', not a trusted source for .*asserted/");
         $this->configure_trust();
         $this->create_learner_with_plan();
         $statement = $this->asserted_statement();
@@ -532,7 +533,7 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
 
     public function test_an_assertion_without_an_authority_is_skipped(): void {
         $this->resetAfterTest(true);
-        $this->expectOutputRegex('/not written by a trusted source/');
+        $this->expectOutputRegex('/written by no authority, not a trusted source/');
         $this->configure_trust();
         $this->create_learner_with_plan();
         $statement = $this->asserted_statement();
@@ -541,28 +542,42 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         $this->assertFalse($this->process_statement($statement, sync_lrs_competencies::VERB_ASSERTED));
     }
 
-    public function test_a_group_authority_is_trusted_through_a_listed_member(): void {
+    public function test_a_group_authority_is_refused_even_with_a_listed_member(): void {
         $this->resetAfterTest(true);
-        $this->expectOutputRegex('/Graded competency T0023/');
+        $this->expectOutputRegex('/written by a Group authority, not a trusted source/');
         $this->configure_trust();
         $this->create_learner_with_plan();
         $statement = $this->asserted_statement();
 
-        // The shape SQL LRS stamps for an OIDC client acting for a user.
+        // The shape SQL LRS stamps for an OIDC client acting for a user. Trusting any member would
+        // let the user member vouch for the statement; nothing writes this way today.
         $statement->authority = (object) [
             'objectType' => 'Group',
             'member' => [
-                (object) ['account' => (object) ['homePage' => self::LRS . '/', 'name' => self::MOODLE_CREDENTIAL]],
+                (object) ['account' => (object) ['homePage' => self::LRS, 'name' => self::MOODLE_CREDENTIAL]],
                 (object) ['account' => (object) ['homePage' => self::ISSUER, 'name' => 'someone']],
             ],
         ];
 
-        $this->assertTrue($this->process_statement($statement, sync_lrs_competencies::VERB_ASSERTED));
+        $this->assertFalse($this->process_statement($statement, sync_lrs_competencies::VERB_ASSERTED));
+    }
+
+    public function test_a_source_may_only_name_learners_under_its_own_homepage(): void {
+        $this->resetAfterTest(true);
+        $this->expectOutputRegex("/Learner account homePage '.*realms\\/crucible' is not one this source may name learners under/");
+        $this->configure_trust();
+        $this->create_learner_with_plan();
+        $statement = $this->asserted_statement();
+
+        // Blueprint's credential is trusted, but only for learners in the other realm.
+        $statement->authority->account->name = 'blueprint-credential';
+
+        $this->assertFalse($this->process_statement($statement, sync_lrs_competencies::VERB_ASSERTED));
     }
 
     public function test_an_asserting_source_is_not_trusted_to_validate(): void {
         $this->resetAfterTest(true);
-        $this->expectOutputRegex('/not written by a trusted source for .*validated/');
+        $this->expectOutputRegex('/not a trusted source for .*validated/');
         $this->configure_trust();
         $this->create_learner_with_plan();
         $statement = $this->validated_statement();
@@ -604,7 +619,7 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
 
     public function test_a_learner_from_an_untrusted_issuer_is_not_resolved(): void {
         $this->resetAfterTest(true);
-        $this->expectOutputRegex('/identity issuer .https:\/\/moodle\.example\.test. is not trusted/');
+        $this->expectOutputRegex('/homePage .https:\/\/moodle\.example\.test. is not one this source may name learners under/');
         $this->configure_trust();
         $this->create_learner_with_plan();
         $statement = $this->asserted_statement();
@@ -628,13 +643,13 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
     }
 
     /**
-     * Trust the test Moodle credential to assert and validate, and the test issuer for learners.
+     * Trust the test Moodle credential to assert and validate for the test realm, and the Blueprint
+     * credential to assert for the other realm.
      */
     private function configure_trust(): void {
-        set_config('lrs_trusted_asserters', self::LRS . ' ' . self::MOODLE_CREDENTIAL . "\n"
-            . self::LRS . ' blueprint-credential', 'tool_lptmanager');
-        set_config('lrs_trusted_validators', self::LRS . '/ ' . self::MOODLE_CREDENTIAL, 'tool_lptmanager');
-        set_config('lrs_identity_issuers', self::ISSUER . '/', 'tool_lptmanager');
+        set_config('lrs_trusted_asserters', self::LRS . ' ' . self::MOODLE_CREDENTIAL . ' ' . self::ISSUER . "/\n"
+            . self::LRS . ' blueprint-credential ' . self::OTHER_ISSUER, 'tool_lptmanager');
+        set_config('lrs_trusted_validators', self::LRS . '/ ' . self::MOODLE_CREDENTIAL . ' ' . self::ISSUER, 'tool_lptmanager');
     }
 
     /**
