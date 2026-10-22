@@ -148,4 +148,18 @@ $settings->add(new \admin_setting_configtextarea(
     'https://niccs.cisa.gov/workforce-development-framework/nice-framework-v2.0.0'
 ));
 
+$settings->add(new \admin_setting_configtextarea(
+    'tool_lptmanager/lrs_trusted_asserters',
+    get_string('lrstrustedasserters', 'tool_lptmanager'),
+    get_string('lrstrustedasserters_desc', 'tool_lptmanager'),
+    ''
+));
+
+$settings->add(new \admin_setting_configtextarea(
+    'tool_lptmanager/lrs_trusted_validators',
+    get_string('lrstrustedvalidators', 'tool_lptmanager'),
+    get_string('lrstrustedvalidators_desc', 'tool_lptmanager'),
+    ''
+));
+
 $ADMIN->add('tools', $settings);

@@ -58,6 +58,9 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     /** @var string TLA MOM validated verb IRI. */
     const VERB_VALIDATED = 'https://w3id.org/xapi/tla/verbs/validated';
 
+    /** @var string TLA extension naming the learner of a validated statement. */
+    const EXT_LEARNER = 'https://w3id.org/xapi/tla/extensions/learner';
+
     /** @var int Maximum time to establish a connection to the LRS. */
     const CONNECT_TIMEOUT_SECONDS = 5;
 
@@ -75,6 +78,9 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
 
     /** @var int[]|null Framework IDs the sync may grade, or null before the allowlist is read. */
     private ?array $allowedframeworkids = null;
+
+    /** @var array<string, array<string, string[]>> Per verb, trusted authority keys and the learner homePages each may name. */
+    private array $trustedauthorities = [];
 
     /**
      * Get a descriptive name for this task.
@@ -105,6 +111,11 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
 
         if (empty($endpoint) || empty($apikey) || empty($apisecret)) {
             mtrace('LRS connection not configured. Skipping sync.');
+            return;
+        }
+
+        if (!$this->get_trusted_authorities(self::VERB_ASSERTED) && !$this->get_trusted_authorities(self::VERB_VALIDATED)) {
+            mtrace('No trusted LRS sources are configured; nothing will be synced.');
             return;
         }
 
@@ -146,6 +157,11 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      * @return array{count: int, checkpoint: ?string, complete: bool} Sync result.
      */
     protected function sync_verb(string $endpoint, string $apikey, string $apisecret, string $verb, $since): array {
+        if (!$this->get_trusted_authorities($verb)) {
+            mtrace("No trusted LRS sources are configured for {$verb}; skipping it.");
+            return $this->create_sync_result(0, null, true);
+        }
+
         $count = 0;
         $url = $this->build_query_url($endpoint, $verb, $since);
         $visitedurls = [];
@@ -445,19 +461,30 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
             return false;
         }
 
+        // The LRS stamps the authority from the credential that wrote the statement, so it names
+        // the source and cannot be supplied by the client. Anyone holding a write credential can
+        // otherwise pick the learner and the competency.
+        $learnerhomepages = $this->get_learner_homepages_for_authority($statement->authority ?? null, $verb);
+        if ($learnerhomepages === null) {
+            $authority = $this->describe_authority($statement->authority ?? null);
+            mtrace("Statement {$statementid} was written by {$authority}, not a trusted source for {$verb}, skipping.");
+            return false;
+        }
+
         // Resolve the learner. For "validated" statements the actor is the instructor;
         // the learner is in context.extensions. For "asserted" the actor is the learner.
         $extensions = $statement->context->extensions ?? new \stdClass();
         if ($verb === self::VERB_VALIDATED) {
-            $learneragent = $extensions->{'https://w3id.org/xapi/tla/extensions/learner'} ?? null;
-            if ($learneragent === null) {
-                mtrace('Validated statement missing learner extension, falling back to actor.');
-                $learneragent = $statement->actor ?? null;
+            // Falling back to the actor would grade the instructor who did the validating.
+            $learneragent = $extensions->{self::EXT_LEARNER} ?? null;
+            if (!is_object($learneragent)) {
+                mtrace("Validated statement {$statementid} has no learner extension, skipping.");
+                return false;
             }
         } else {
             $learneragent = $statement->actor ?? null;
         }
-        $user = $this->resolve_actor($learneragent);
+        $user = $this->resolve_actor($learneragent, $learnerhomepages);
         if ($user === null) {
             return false;
         }
@@ -468,36 +495,23 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
             return false;
         }
 
-        // Extract the framework IRI from contextActivities.grouping if present.
-        $frameworkiri = $this->extract_framework_iri($statement);
+        // Settle on one framework before grading anything, so an assertion never lands on a
+        // competency in a framework or version it was not made against.
+        $frameworkid = $this->resolve_framework($this->extract_framework_iri($statement), $idnumber);
+        if ($frameworkid === null) {
+            return false;
+        }
 
         // Find and grade matching competencies across all of the user's learning plans.
-        $result = $this->grade_competency_in_plans($user, $idnumber, $frameworkiri, $statementid);
+        $result = $this->grade_competency_in_plans($user, $idnumber, $frameworkid, $statementid);
 
         $competencyid = $result['competencyid'];
         if ($competencyid === null) {
-            // Not in any plan — look up a competency record for the sync log.
-            $conditions = ['idnumber' => $idnumber];
-            if ($frameworkiri !== null) {
-                $fw = $DB->get_record('competency_framework', ['idnumber' => $frameworkiri]);
-                if ($fw) {
-                    $conditions['competencyframeworkid'] = $fw->id;
-                }
-            }
-            $competencyrecord = $DB->get_record('competency', $conditions);
-            if (!$competencyrecord) {
-                mtrace("Competency with idnumber '{$idnumber}' not found in Moodle.");
-                return false;
-            }
-            // The allowlist governs the log as well as the grading. When an idnumber exists in both
-            // an allowed and a disallowed framework and the statement named no framework, the
-            // record found here may be the disallowed one; losing a log row is the safe direction.
-            $framework = (int) $competencyrecord->competencyframeworkid;
-            if (!in_array($framework, $this->get_allowed_framework_ids(), true)) {
-                mtrace("Competency '{$idnumber}' is outside the allowed competency frameworks.");
-                return false;
-            }
-            $competencyid = (int) $competencyrecord->id;
+            // Not in any plan, so log the framework's competency instead.
+            $competencyid = (int) $DB->get_field('competency', 'id', [
+                'idnumber' => $idnumber,
+                'competencyframeworkid' => $frameworkid,
+            ]);
         }
 
         // Extract Crucible extensions if present.
@@ -522,12 +536,16 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     /**
      * Resolve an xAPI actor to a Moodle user.
      *
-     * Looks up by account.name → user.idnumber (Keycloak sub), falling back to mbox → email.
+     * Only an account under a homePage the source may name is accepted, and its name is matched
+     * to user.idnumber (the Keycloak sub). Without that check a Moodle user id or any other
+     * system's account name could collide with someone's idnumber. Email (mbox) is not used: no
+     * Crucible app identifies learners by it.
      *
      * @param object|null $actor The xAPI actor object.
+     * @param string[] $learnerhomepages Normalised account homePages the source may name learners under.
      * @return object|null The Moodle user record or null.
      */
-    private function resolve_actor(?object $actor): ?object {
+    private function resolve_actor(?object $actor, array $learnerhomepages): ?object {
         global $DB;
 
         if ($actor === null) {
@@ -535,26 +553,129 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
             return null;
         }
 
-        // Try account.name → user.idnumber (Keycloak sub claim).
-        if (!empty($actor->account->name)) {
-            $user = $DB->get_record('user', ['idnumber' => $actor->account->name, 'deleted' => 0]);
-            if ($user) {
-                return $user;
-            }
+        $account = $actor->account ?? null;
+        $homepage = is_object($account) ? ($account->homePage ?? null) : null;
+        $name = is_object($account) ? ($account->name ?? null) : null;
+        if (!is_string($homepage) || !is_string($name) || $name === '') {
+            mtrace('Learner has no account identity.');
+            return null;
         }
 
-        // Fallback: mbox → email.
-        if (!empty($actor->mbox)) {
-            $email = str_replace('mailto:', '', $actor->mbox);
-            $user = $DB->get_record('user', ['email' => $email, 'deleted' => 0]);
-            if ($user) {
-                return $user;
-            }
+        if (!in_array($this->normalise_url($homepage), $learnerhomepages, true)) {
+            mtrace("Learner account homePage '{$homepage}' is not one this source may name learners under.");
+            return null;
         }
 
-        $actorname = $actor->account->name ?? $actor->mbox ?? 'unknown';
-        mtrace("Could not resolve actor '{$actorname}' to a Moodle user.");
+        $user = $DB->get_record('user', ['idnumber' => $name, 'deleted' => 0]);
+        if ($user) {
+            return $user;
+        }
+
+        mtrace("Could not resolve actor '{$name}' to a Moodle user.");
         return null;
+    }
+
+    /**
+     * Find the learner homePages a statement's authority may name for a verb.
+     *
+     * Only an Agent authority with an account is accepted. Group authorities (an OIDC client
+     * acting for a user) are refused until a writer needs them: trusting one safely means
+     * deciding which member is the client, and no source writes that way today.
+     *
+     * @param mixed $authority The statement's authority.
+     * @param string $verb The verb IRI.
+     * @return string[]|null The learner homePages, or null if the authority is not trusted.
+     */
+    private function get_learner_homepages_for_authority($authority, string $verb): ?array {
+        if (!is_object($authority) || ($authority->objectType ?? 'Agent') !== 'Agent') {
+            return null;
+        }
+
+        $account = $authority->account ?? null;
+        $homepage = is_object($account) ? ($account->homePage ?? null) : null;
+        $name = is_object($account) ? ($account->name ?? null) : null;
+        if (!is_string($homepage) || !is_string($name)) {
+            return null;
+        }
+
+        return $this->get_trusted_authorities($verb)[$this->get_authority_key($homepage, $name)] ?? null;
+    }
+
+    /**
+     * Describe a statement authority for the task log, so an admin can copy it into the settings.
+     *
+     * @param mixed $authority The statement's authority.
+     * @return string
+     */
+    private function describe_authority($authority): string {
+        if (!is_object($authority)) {
+            return 'no authority';
+        }
+        if (($authority->objectType ?? 'Agent') === 'Group') {
+            return 'a Group authority';
+        }
+        $account = $authority->account ?? null;
+        $homepage = is_object($account) ? ($account->homePage ?? null) : null;
+        $name = is_object($account) ? ($account->name ?? null) : null;
+        if (!is_string($homepage) || !is_string($name)) {
+            return 'an authority without an account';
+        }
+        return "'{$homepage} {$name}'";
+    }
+
+    /**
+     * Read the trusted sources configured for a verb.
+     *
+     * Each line names a credential as the LRS stamps its authority (homePage, then name) and the
+     * account homePage of the learners it may grade: "this credential may grade learners
+     * identified under this homePage". A credential trusted for several learner homePages takes
+     * one line each. An empty list trusts no source.
+     *
+     * @param string $verb The verb IRI.
+     * @return array<string, string[]> Trusted authority keys and their normalised learner homePages.
+     */
+    private function get_trusted_authorities(string $verb): array {
+        if (isset($this->trustedauthorities[$verb])) {
+            return $this->trustedauthorities[$verb];
+        }
+
+        $settingname = $verb === self::VERB_VALIDATED ? 'lrs_trusted_validators' : 'lrs_trusted_asserters';
+        $lines = array_filter(array_map('trim', explode("\n", (string) get_config('tool_lptmanager', $settingname))));
+
+        $trusted = [];
+        foreach ($lines as $line) {
+            $parts = preg_split('/\s+/', $line);
+            if (count($parts) !== 3) {
+                mtrace("Ignoring trusted source '{$line}' in {$settingname}: expected an authority homePage, "
+                    . "an authority name and a learner homePage.");
+                continue;
+            }
+            $trusted[$this->get_authority_key($parts[0], $parts[1])][] = $this->normalise_url($parts[2]);
+        }
+
+        $this->trustedauthorities[$verb] = $trusted;
+        return $trusted;
+    }
+
+    /**
+     * Build the lookup key for an authority account.
+     *
+     * @param string $homepage The account homePage.
+     * @param string $name The account name.
+     * @return string
+     */
+    private function get_authority_key(string $homepage, string $name): string {
+        return $this->normalise_url($homepage) . ' ' . $name;
+    }
+
+    /**
+     * Normalise a URL so a trailing slash does not decide a match.
+     *
+     * @param string $url The URL.
+     * @return string
+     */
+    private function normalise_url(string $url): string {
+        return rtrim(trim($url), '/');
     }
 
     /**
@@ -619,13 +740,72 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
      */
     private function extract_framework_iri(object $statement): ?string {
         $grouping = $statement->context->contextActivities->grouping ?? [];
-        foreach ($grouping as $activity) {
+        foreach (is_array($grouping) ? $grouping : [] as $activity) {
             $type = $activity->definition->type ?? '';
             if ($type === 'https://w3id.org/xapi/tla/activity-types/competency-framework') {
-                return $activity->id ?? null;
+                return is_string($activity->id ?? null) && $activity->id !== '' ? $activity->id : null;
             }
         }
         return null;
+    }
+
+    /**
+     * Resolve the allowed framework a statement's competency belongs to.
+     *
+     * A named framework has to be installed and allowed. It is never dropped in favour of
+     * matching the idnumber alone: NICE reuses codes across versions, and once two versions are
+     * installed an assertion against one that is missing here would grade the same code in
+     * another, which may not mean the same thing. Bridging versions is a crosswalk's job.
+     *
+     * A statement that names no framework is matched by idnumber across the allowed frameworks,
+     * and only when exactly one of them has it.
+     *
+     * @param string|null $frameworkiri The framework IRI from contextActivities.grouping, or null.
+     * @param string $idnumber The competency idnumber.
+     * @return int|null The framework ID, or null if the statement must be skipped.
+     */
+    private function resolve_framework(?string $frameworkiri, string $idnumber): ?int {
+        global $DB;
+
+        $allowed = $this->get_allowed_framework_ids();
+
+        if ($frameworkiri !== null) {
+            $frameworkid = $DB->get_field('competency_framework', 'id', ['idnumber' => $frameworkiri]);
+            if ($frameworkid === false) {
+                mtrace("Framework '{$frameworkiri}' is not installed, skipping competency '{$idnumber}'.");
+                return null;
+            }
+            if (!in_array((int) $frameworkid, $allowed, true)) {
+                mtrace("Framework '{$frameworkiri}' is not an allowed competency framework, skipping.");
+                return null;
+            }
+            if (!$DB->record_exists('competency', ['idnumber' => $idnumber, 'competencyframeworkid' => $frameworkid])) {
+                mtrace("Competency '{$idnumber}' not found in framework '{$frameworkiri}'.");
+                return null;
+            }
+            return (int) $frameworkid;
+        }
+
+        if (!$allowed) {
+            return null;
+        }
+        [$insql, $params] = $DB->get_in_or_equal($allowed, SQL_PARAMS_NAMED);
+        $params['idnumber'] = $idnumber;
+        $frameworkids = $DB->get_fieldset_select(
+            'competency',
+            'DISTINCT competencyframeworkid',
+            "idnumber = :idnumber AND competencyframeworkid {$insql}",
+            $params
+        );
+        if (!$frameworkids) {
+            mtrace("Competency '{$idnumber}' not found in the allowed competency frameworks.");
+            return null;
+        }
+        if (count($frameworkids) > 1) {
+            mtrace("Competency '{$idnumber}' is in more than one allowed framework and the statement names none.");
+            return null;
+        }
+        return (int) reset($frameworkids);
     }
 
     /**
@@ -667,40 +847,23 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
     /**
      * Find and grade a competency by idnumber across all of the user's learning plans.
      *
-     * Matches by idnumber rather than competency ID so the correct framework-specific
-     * competency is used when the same idnumber exists in multiple frameworks.
-     * When a framework IRI is provided, only competencies from that framework are matched.
+     * Matches by idnumber within one framework, the one resolve_framework() settled on, so the
+     * same code in another framework or another version of this one is never graded.
      *
      * @param object $user The Moodle user record.
      * @param string $idnumber The competency idnumber from the xAPI statement.
-     * @param string|null $frameworkiri The framework IRI from contextActivities.grouping, or null.
+     * @param int $frameworkid The allowed framework the statement resolved to.
      * @param string $statementid The xAPI statement ID (for evidence note).
      * @return array{competencyid: int|null, planid: int|null} The first matched competency and plan IDs.
      */
     private function grade_competency_in_plans(
         object $user,
         string $idnumber,
-        ?string $frameworkiri,
+        int $frameworkid,
         string $statementid
     ): array {
-        global $DB;
-
         $result = ['competencyid' => null, 'planid' => null];
         $plans = api::list_user_plans($user->id);
-
-        // Resolve framework ID from the statement's grouping IRI.
-        $frameworkid = null;
-        if ($frameworkiri !== null) {
-            $fw = $DB->get_record('competency_framework', ['idnumber' => $frameworkiri]);
-            if ($fw) {
-                $frameworkid = (int) $fw->id;
-            } else {
-                mtrace("Framework with idnumber '{$frameworkiri}' not found, ignoring framework filter.");
-            }
-        }
-
-        // Build the set of allowed framework IDs from the allowlist setting.
-        $allowedframeworkids = $this->get_allowed_framework_ids();
 
         foreach ($plans as $plan) {
             $plancompetencies = api::list_plan_competencies($plan);
@@ -708,11 +871,7 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
                 if ($pc->competency->get('idnumber') !== $idnumber) {
                     continue;
                 }
-                $compframeworkid = (int) $pc->competency->get('competencyframeworkid');
-                if ($frameworkid !== null && $compframeworkid !== $frameworkid) {
-                    continue;
-                }
-                if (!in_array($compframeworkid, $allowedframeworkids, true)) {
+                if ((int) $pc->competency->get('competencyframeworkid') !== $frameworkid) {
                     continue;
                 }
                 $competency = $pc->competency;
@@ -748,6 +907,19 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
         $grade = $this->get_proficient_grade($competency);
         if ($grade === null) {
             mtrace("Could not determine proficient grade for competency {$competency->get('idnumber')}.");
+            return;
+        }
+
+        // Rating a plan competency fires competency_user_competency_rated_in_plan, which
+        // logstore_xapi sends back to the LRS as a validated statement from Moodle's credential.
+        // Grading an already proficient competency again would answer that echo with another
+        // rating, and so another echo, on every run.
+        $usercompetency = \core_competency\user_competency::get_record([
+            'userid' => $plan->get('userid'),
+            'competencyid' => $competency->get('id'),
+        ]);
+        if ($usercompetency && $usercompetency->get('proficiency')) {
+            mtrace("Competency {$competency->get('idnumber')} is already proficient in plan {$plan->get('id')}, not regrading.");
             return;
         }
 
