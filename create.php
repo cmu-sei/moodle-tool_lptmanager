@@ -19,13 +19,15 @@ Learning Plan Template Manager for Moodle
 
 Copyright 2024 Carnegie Mellon University.
 
-NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS.
-CARNEGIE MELLON UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS TO ANY MATTER INCLUDING, BUT NOT LIMITED TO,
-WARRANTY OF FITNESS FOR PURPOSE OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL.
-CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY WARRANTY OF ANY KIND WITH RESPECT TO FREEDOM FROM PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT.
-Licensed under a GNU GENERAL PUBLIC LICENSE - Version 3, 29 June 2007-style license, please see license.txt or contact permission@sei.cmu.edu for full terms.
+NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS"
+BASIS. CARNEGIE MELLON UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS TO ANY MATTER
+INCLUDING, BUT NOT LIMITED TO, WARRANTY OF FITNESS FOR PURPOSE OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM
+USE OF THE MATERIAL. CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY WARRANTY OF ANY KIND WITH RESPECT TO FREEDOM FROM
+PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT. Licensed under a GNU GENERAL PUBLIC LICENSE - Version 3, 29 June
+2007-style license, please see license.txt or contact permission@sei.cmu.edu for full terms.
 
-[DISTRIBUTION STATEMENT A] This material has been approved for public release and unlimited distribution. Please see Copyright notice for non-US Government use and distribution.
+[DISTRIBUTION STATEMENT A] This material has been approved for public release and unlimited distribution. Please see
+Copyright notice for non-US Government use and distribution.
 
 This Software includes and/or makes use of Third-Party Software each subject to its own license.
 
@@ -73,8 +75,8 @@ if ($confirm) {
     // Step 3: Confirmation form submitted, proceed to create.
     require_sesskey();
 
-    $competencies_json = required_param('competencies', PARAM_RAW);
-    $competencies = json_decode($competencies_json, true);
+    $competenciesjson = required_param('competencies', PARAM_RAW);
+    $competencies = json_decode($competenciesjson, true);
     $frameworkid = required_param('frameworkid', PARAM_INT);
 
     $creator = new \tool_lptmanager\lp_importer();
@@ -97,7 +99,7 @@ if ($confirm) {
         // Extract the search text from the form data.
         $regexvalue = $data->regexvalue;
 
-        // Define filters for competency search
+        // Define filters for competency search.
         $filters = [];
         if ($frameworkid) {
             $filters['competencyframeworkid'] = $frameworkid;
@@ -105,29 +107,32 @@ if ($confirm) {
 
         // Get the competencies of the selected framework.
         $competencies = api::list_competencies($filters);
-        $matching_competencies = [];
+        $matchingcompetencies = [];
 
         // Match every competency whose idnumber contains the search text (a literal substring, not a regex).
         foreach ($competencies as $competency) {
             $idnumber = $competency->get('idnumber');
             if (str_contains($idnumber, $regexvalue)) {
-                $matching_competencies[] = $competency->get('id');
+                $matchingcompetencies[] = $competency->get('id');
             }
         }
 
-        if (empty($matching_competencies)) {
+        if (empty($matchingcompetencies)) {
             echo $OUTPUT->notification(get_string('nocompetenciesfound', 'tool_lptmanager'), 'notifyproblem');
             // Display the form again.
             echo $OUTPUT->heading($pagetitle);
             $form->display();
         } else {
             // Display the confirmation form.
-            $confirm_form = new \tool_lptmanager\form\create_confirm(null, ['competencies' => $matching_competencies, 'frameworkid' => $frameworkid]);
+            $confirmform = new \tool_lptmanager\form\create_confirm(
+                null,
+                ['competencies' => $matchingcompetencies, 'frameworkid' => $frameworkid]
+            );
 
             // Output heading for confirmation.
             echo $OUTPUT->heading(get_string('confirm_create_heading', 'tool_lptmanager'));
 
-            $confirm_form->display();
+            $confirmform->display();
         }
     } else {
         // Step 1: Display the create form.

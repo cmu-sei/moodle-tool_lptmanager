@@ -18,14 +18,16 @@
 Learning Plan Template Manager for Moodle
 
 
-Copyright 2024 Carnegie Mellon University.
-NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS.
-CARNEGIE MELLON UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS TO ANY MATTER INCLUDING, BUT NOT LIMITED TO,
-WARRANTY OF FITNESS FOR PURPOSE OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL.
-CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY WARRANTY OF ANY KIND WITH RESPECT TO FREEDOM FROM PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT.
-Licensed under a GNU GENERAL PUBLIC LICENSE - Version 3, 29 June 2007-style license, please see license.txt or contact permission@sei.cmu.edu for full terms.
+Copyright 2024 Carnegie Mellon University. NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING
+INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS. CARNEGIE MELLON UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER
+EXPRESSED OR IMPLIED, AS TO ANY MATTER INCLUDING, BUT NOT LIMITED TO, WARRANTY OF FITNESS FOR PURPOSE OR
+MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL. CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY
+WARRANTY OF ANY KIND WITH RESPECT TO FREEDOM FROM PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT. Licensed under a GNU
+GENERAL PUBLIC LICENSE - Version 3, 29 June 2007-style license, please see license.txt or contact permission@sei.cmu.edu
+for full terms.
 
-[DISTRIBUTION STATEMENT A] This material has been approved for public release and unlimited distribution. Please see Copyright notice for non-US Government use and distribution.
+[DISTRIBUTION STATEMENT A] This material has been approved for public release and unlimited distribution. Please see
+Copyright notice for non-US Government use and distribution.
 
 This Software includes and/or makes use of Third-Party Software each subject to its own license.
 
@@ -40,41 +42,73 @@ DM24-1177
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-$string['confirmcolumnmappings'] = 'Confirm the column mappings';
-$string['confirm'] = 'Confirm';
-$string['csvdelimiter'] = 'CSV separator';
-$string['description'] = 'Description';
-$string['descriptionformat'] = 'Description format';
+$string['competencydescription'] = 'Description';
 $string['competencyframeworkid'] = 'Competency Framework ID';
 $string['competencyframeworkidnumber'] = 'Competency Framework ID Number';
+$string['competencyidnumber'] = 'Competency ID';
+$string['competencyiriprefix'] = 'Competency IRI prefix';
+$string['competencyiriprefix_desc'] = 'Prefix to strip from xAPI competency object IRIs to extract the idnumber (e.g., https://niccs.cisa.gov/workforce-development/nice-framework/ksat/). The remainder after stripping is matched against Moodle competency idnumber fields. Statements whose object IRI does not start with this prefix are skipped unless they carry a TLA competency-identifier extension.';
+$string['competencyname'] = 'Competency Name';
+$string['competencyname_help'] = 'Enter text to search for in competency ID numbers. Every competency whose ID number contains this text is matched, for example WRL matches CE-WRL-001. The text is matched literally, not as a regular expression.';
+$string['competencyshortname'] = 'Competency Shortname';
+$string['confirm'] = 'Confirm';
+$string['confirm_create'] = 'Please confirm the creation of the following competencies:';
+$string['confirm_create_heading'] = 'Learning Plan Templates to be Created';
+$string['confirmcolumnmappings'] = 'Confirm the column mappings';
+$string['coursecategory'] = 'Select course category';
 $string['create'] = 'Create';
 $string['createall'] = 'Create All Learning Plan Templates';
 $string['createall_help'] = 'Create All Learning Plan Templates instead of just one';
+$string['createnavlink'] = 'Create learning plan templates from competency framework';
+$string['createnote'] = '<strong>Instructions:</strong> Enter text to match against competency ID numbers. For each competency whose ID number contains the text, the tool will generate a learning plan template and it will add the cross-referenced competencies to the learning plan template.';
+$string['csvdelimiter'] = 'CSV separator';
+$string['description'] = 'Description';
+$string['descriptionformat'] = 'Description format';
+$string['enablersksyncsetting'] = 'Enable LRS sync';
+$string['enablersksyncsetting_desc'] = 'When enabled, a scheduled task will periodically query the SQL LRS for competency assertion statements and update learner plans.';
 $string['encoding'] = 'Encoding';
 $string['export'] = 'Export';
 $string['exportall'] = 'Export All Learning Plans';
 $string['exportall_help'] = 'Export All Learning Plans instead of just one';
 $string['exportnavlink'] = 'Export learning plan templates';
-$string['multipleframeworks'] = 'Learning plan template \'{$a->template}\' cannot be exported: its competencies belong to more than one competency framework (\'{$a->first}\' and \'{$a->second}\'). An exported template can only reference one framework.';
-$string['createnavlink'] = 'Create learning plan templates from competency framework';
+$string['exportnote'] = '<strong>Instructions:</strong> After exporting the learning plan templates, you may also wish to export any competency frameworks used by these learning plan templates';
+$string['frameworknotfound'] = 'Competency framework \'{$a->framework}\' not found. Learning plan template \'{$a->template}\' was created without its cross-referenced competencies.';
 $string['id'] = 'ID';
 $string['idnumber'] = 'ID number';
+$string['import'] = 'Import';
 $string['importfile'] = 'CSV learning plan template description file';
 $string['importfile_help'] = 'A learning plan template may be imported via text file. The format of the file can be determined by creating a new learning plan template on the site and then exporting it.';
 $string['importfile_link'] = 'admin/tool/lptmanager';
-$string['import'] = 'Import';
 $string['importingfile'] = 'Importing file data';
+$string['importnote'] = '<strong>Instructions:</strong> Before importing learning plan templates into Moodle, ensure that any associated competency frameworks have already been imported.';
 $string['invalidimportfile'] = 'File format is invalid.';
+$string['learningplansimported'] = 'Learning plan template imported successfully.';
+$string['lrsapikey'] = 'LRS API key';
+$string['lrsapikey_desc'] = 'API key for authenticating with the SQL LRS xAPI endpoint.';
+$string['lrsapisecret'] = 'LRS API secret';
+$string['lrsapisecret_desc'] = 'API secret for authenticating with the SQL LRS xAPI endpoint.';
+$string['lrsendpoint'] = 'LRS endpoint';
+$string['lrsendpoint_desc'] = 'The xAPI statements endpoint URL for SQL LRS (e.g., http://lrsql:9274/xapi).';
+$string['lrsmaxpagesperverb'] = 'LRS page limit per verb';
+$string['lrsmaxpagesperverb_desc'] = 'Maximum number of statement pages to process for each verb in one task run (1-1000). The default is 20.';
+$string['lrsrequesttimeout'] = 'LRS request timeout';
+$string['lrsrequesttimeout_desc'] = 'Maximum total time in seconds for each LRS request (1-300). The default is 15 seconds.';
+$string['lrssettings'] = 'LRS Competency Sync';
+$string['lrssettingsdesc'] = 'Configure the connection to SQL LRS for syncing competency assertion statements into Moodle learning plans.';
+$string['lrssettingsheading'] = 'SQL LRS Connection';
+$string['lrssyncframeworks'] = 'Allowed competency frameworks';
+$string['lrssyncframeworks_desc'] = 'Restrict which competency frameworks the LRS sync is allowed to grade. Enter one framework idnumber (IRI) per line. Only competencies belonging to these frameworks will be graded. Leave empty to sync nothing.';
+$string['lrstrustedasserters'] = 'Trusted asserting sources';
+$string['lrstrustedasserters_desc'] = 'The LRS credentials whose "asserted" statements may grade learning plans, and the learners each may grade. One per line, three values separated by spaces: the statement authority\'s account homePage, its account name, and the account homePage the source identifies learners under (e.g. <code>https://lrs.example.com 019e73d0-8404-888f-aa9b-9e604f7e704e https://keycloak.example.com/realms/crucible</code>). Copy the first two from the authority of a statement the source wrote; the task log prints the authority of every statement it skips. The learner homePage must be one whose account names are users\' ID numbers, such as the Keycloak realm; never a Moodle site URL, whose account names are Moodle user ids. Statements from any other credential are ignored. Leave empty to sync no asserted statements.';
+$string['lrstrustedvalidators'] = 'Trusted validating sources';
+$string['lrstrustedvalidators_desc'] = 'The LRS credentials whose "validated" statements may grade learning plans, in the same format as the trusted asserting sources. The learner homePage applies to the TLA learner extension, which validated statements must carry. Leave empty to sync no validated statements.';
+$string['multipleframeworks'] = 'Learning plan template \'{$a->template}\' cannot be exported: its competencies belong to more than one competency framework (\'{$a->first}\' and \'{$a->second}\'). An exported template can only reference one framework.';
+$string['nocompetenciesfound'] = 'No competencies were found matching your criteria. Please verify your search text or framework selection and try again.';
+$string['noframeworks'] = 'No Competency Frameworks Found';
+$string['noframeworks_help'] = 'No competency frameworks are currently available. Please check your competency frameworks settings or add the necessary frameworks to proceed with the create process.';
 $string['notemplates'] = 'No learning plan templates have been created yet';
 $string['parentidnumber'] = 'Parent ID number';
 $string['pluginname'] = 'Learning Plan Template Manager';
-$string['processingfile'] = 'Processing file';
-$string['relatedidnumbers'] = 'Cross-referenced competency ID numbers';
-$string['shortname'] = 'Short name';
-$string['learningplansimported'] = 'Learning plan template imported successfully.';
-$string['templatecreated'] = 'Learning plan template \'{$a}\' created successfully.';
-$string['templateexists'] = 'A template with the shortname \'{$a}\' already exists.';
-$string['frameworknotfound'] = 'Competency framework \'{$a->framework}\' not found. Learning plan template \'{$a->template}\' was created without its cross-referenced competencies.';
 $string['privacy:metadata:lrs_sync'] = 'A log of the xAPI competency statements the LRS sync task has applied to a user\'s learning plans, kept so that no statement is applied twice.';
 $string['privacy:metadata:lrs_sync:competencyid'] = 'The competency the statement rated.';
 $string['privacy:metadata:lrs_sync:exerciseid'] = 'The Crucible exercise the statement came from.';
@@ -85,45 +119,13 @@ $string['privacy:metadata:lrs_sync:timecreated'] = 'The time the statement was a
 $string['privacy:metadata:lrs_sync:userid'] = 'The user the statement was about.';
 $string['privacy:metadata:lrs_sync:verb'] = 'The xAPI verb of the statement (asserted or validated).';
 $string['privacy:path:lrssync'] = 'LRS competency sync';
-$string['noframeworks'] = 'No Competency Frameworks Found';
-$string['noframeworks_help'] = 'No competency frameworks are currently available. Please check your competency frameworks settings or add the necessary frameworks to proceed with the create process.';
-$string['competencyname'] = 'Competency Name';
-$string['competencyname_help'] = 'Enter text to search for in competency ID numbers. Every competency whose ID number contains this text is matched, for example WRL matches CE-WRL-001. The text is matched literally, not as a regular expression.';
+$string['processingfile'] = 'Processing file';
+$string['relatedidnumbers'] = 'Cross-referenced competency ID numbers';
+$string['shortname'] = 'Short name';
+$string['syncevidencenote'] = 'Demonstrated in Crucible exercise. xAPI statement: {$a}';
+$string['synclrscompetencies'] = 'Sync competency assertions from SQL LRS';
+$string['templatecreated'] = 'Learning plan template \'{$a}\' created successfully.';
+$string['templateexists'] = 'A template with the shortname \'{$a}\' already exists.';
 $string['usecategory'] = 'Use specific category';
 $string['usecategory_desc'] = 'Use specific category';
 $string['usecategory_desc_help'] = 'Select this option to import the learning plan into a specified course category. If no course category is selected, the default System category will be used.';
-$string['coursecategory'] = 'Select course category';
-$string['importnote'] = '<strong>Instructions:</strong> Before importing learning plan templates into Moodle, ensure that any associated competency frameworks have already been imported.';
-$string['exportnote'] = '<strong>Instructions:</strong> After exporting the learning plan templates, you may also wish to export any competency frameworks used by these learning plan templates';
-$string['confirm_create'] = 'Please confirm the creation of the following competencies:';
-$string['confirm_create_heading'] = 'Learning Plan Templates to be Created';
-$string['nocompetenciesfound'] = 'No competencies were found matching your criteria. Please verify your search text or framework selection and try again.';
-$string['competencyshortname'] = 'Competency Shortname';
-$string['competencyidnumber'] = 'Competency ID';
-$string['competencydescription'] = 'Description';
-$string['createnote'] = '<strong>Instructions:</strong> Enter text to match against competency ID numbers. For each competency whose ID number contains the text, the tool will generate a learning plan template and it will add the cross-referenced competencies to the learning plan template.';
-$string['synclrscompetencies'] = 'Sync competency assertions from SQL LRS';
-$string['syncevidencenote'] = 'Demonstrated in Crucible exercise. xAPI statement: {$a}';
-$string['lrssettings'] = 'LRS Competency Sync';
-$string['lrssettingsheading'] = 'SQL LRS Connection';
-$string['lrssettingsdesc'] = 'Configure the connection to SQL LRS for syncing competency assertion statements into Moodle learning plans.';
-$string['enablersksyncsetting'] = 'Enable LRS sync';
-$string['enablersksyncsetting_desc'] = 'When enabled, a scheduled task will periodically query the SQL LRS for competency assertion statements and update learner plans.';
-$string['lrsendpoint'] = 'LRS endpoint';
-$string['lrsendpoint_desc'] = 'The xAPI statements endpoint URL for SQL LRS (e.g., http://lrsql:9274/xapi).';
-$string['lrsrequesttimeout'] = 'LRS request timeout';
-$string['lrsrequesttimeout_desc'] = 'Maximum total time in seconds for each LRS request (1-300). The default is 15 seconds.';
-$string['lrsmaxpagesperverb'] = 'LRS page limit per verb';
-$string['lrsmaxpagesperverb_desc'] = 'Maximum number of statement pages to process for each verb in one task run (1-1000). The default is 20.';
-$string['lrsapikey'] = 'LRS API key';
-$string['lrsapikey_desc'] = 'API key for authenticating with the SQL LRS xAPI endpoint.';
-$string['lrsapisecret'] = 'LRS API secret';
-$string['lrsapisecret_desc'] = 'API secret for authenticating with the SQL LRS xAPI endpoint.';
-$string['competencyiriprefix'] = 'Competency IRI prefix';
-$string['competencyiriprefix_desc'] = 'Prefix to strip from xAPI competency object IRIs to extract the idnumber (e.g., https://niccs.cisa.gov/workforce-development/nice-framework/ksat/). The remainder after stripping is matched against Moodle competency idnumber fields. Statements whose object IRI does not start with this prefix are skipped unless they carry a TLA competency-identifier extension.';
-$string['lrssyncframeworks'] = 'Allowed competency frameworks';
-$string['lrssyncframeworks_desc'] = 'Restrict which competency frameworks the LRS sync is allowed to grade. Enter one framework idnumber (IRI) per line. Only competencies belonging to these frameworks will be graded. Leave empty to sync nothing.';
-$string['lrstrustedasserters'] = 'Trusted asserting sources';
-$string['lrstrustedasserters_desc'] = 'The LRS credentials whose "asserted" statements may grade learning plans, and the learners each may grade. One per line, three values separated by spaces: the statement authority\'s account homePage, its account name, and the account homePage the source identifies learners under (e.g. <code>https://lrs.example.com 019e73d0-8404-888f-aa9b-9e604f7e704e https://keycloak.example.com/realms/crucible</code>). Copy the first two from the authority of a statement the source wrote; the task log prints the authority of every statement it skips. The learner homePage must be one whose account names are users\' ID numbers, such as the Keycloak realm; never a Moodle site URL, whose account names are Moodle user ids. Statements from any other credential are ignored. Leave empty to sync no asserted statements.';
-$string['lrstrustedvalidators'] = 'Trusted validating sources';
-$string['lrstrustedvalidators_desc'] = 'The LRS credentials whose "validated" statements may grade learning plans, in the same format as the trusted asserting sources. The learner homePage applies to the TLA learner extension, which validated statements must carry. Leave empty to sync no validated statements.';
