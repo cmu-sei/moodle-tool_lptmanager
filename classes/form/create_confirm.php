@@ -51,7 +51,13 @@ DM24-1177
 
  require_once($CFG->libdir . '/formslib.php');
 
+/**
+ * Form for confirming the competencies that learning plan templates will be created from.
+ */
 class create_confirm extends \moodleform {
+    /**
+     * Define the form - called by parent constructor.
+     */
     public function definition() {
         $mform = $this->_form;
         $competencies = $this->_customdata['competencies'];

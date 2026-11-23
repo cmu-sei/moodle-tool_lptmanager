@@ -44,6 +44,12 @@ DM24-1177
 
 defined('MOODLE_INTERNAL') || die();
 
+/**
+ * Upgrade steps for tool_lptmanager.
+ *
+ * @param int $oldversion The version being upgraded from.
+ * @return bool Always true.
+ */
 function xmldb_tool_lptmanager_upgrade($oldversion) {
     global $DB;
     $dbman = $DB->get_manager();

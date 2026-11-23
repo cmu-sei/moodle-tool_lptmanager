@@ -52,6 +52,9 @@ use tool_lptmanager\lp_importer;
 
 require_once($CFG->libdir . '/formslib.php');
 
+/**
+ * Form for confirming the column mappings of an imported CSV file.
+ */
 class import_confirm extends moodleform {
     /**
      * Define the form - called by parent constructor

@@ -52,6 +52,9 @@ use core_competency\api;
 
 require_once($CFG->libdir . '/formslib.php');
 
+/**
+ * Form for choosing which learning plan template to export.
+ */
 class export extends moodleform {
     /**
      * Define the form - called by parent constructor

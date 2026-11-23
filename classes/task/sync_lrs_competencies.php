@@ -140,7 +140,8 @@ class sync_lrs_competencies extends \core\task\scheduled_task {
 
         set_config('lrs_last_sync', $checkpoint, 'tool_lptmanager');
         if (!$asserted['complete'] || !$validated['complete']) {
-            mtrace("LRS sync made partial progress through {$checkpoint}. Processed {$asserted['count']} asserted, {$validated['count']} validated statements.");
+            mtrace("LRS sync made partial progress through {$checkpoint}. " .
+                "Processed {$asserted['count']} asserted, {$validated['count']} validated statements.");
             return;
         }
 

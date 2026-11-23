@@ -520,7 +520,9 @@ final class sync_lrs_competencies_test extends \advanced_testcase {
         global $DB;
         $this->resetAfterTest(true);
         // The log names the skipped authority so an admin can copy it into the settings.
-        $this->expectOutputRegex("/written by 'https:\\/\\/lrs\\.example\\.test cmi5-player-credential', not a trusted source for .*asserted/");
+        $this->expectOutputRegex(
+            "/written by 'https:\\/\\/lrs\\.example\\.test cmi5-player-credential', not a trusted source for .*asserted/"
+        );
         $this->configure_trust();
         $this->create_learner_with_plan();
         $statement = $this->asserted_statement();

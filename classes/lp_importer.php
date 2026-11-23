@@ -54,6 +54,9 @@ use context_system;
 use csv_import_reader;
 use core\progress;
 
+/**
+ * Imports learning plan templates from a CSV file and creates them from competency frameworks.
+ */
 class lp_importer {
     /** @var string $error The errors message from reading the xml */
     protected $error = '';
@@ -62,15 +65,21 @@ class lp_importer {
     protected $flat = [];
     /** @var array $framework The framework info */
     protected $framework = [];
+    /** @var array $mappings Reserved for the column mappings; not currently used. */
     protected $mappings = [];
+    /** @var int|string $importid The id of the CSV import being processed. */
     protected $importid = 0;
+    /** @var csv_import_reader|null $importer The CSV reader for the import. */
     protected $importer = null;
+    /** @var array $foundheaders The column headers found in the imported file. */
     protected $foundheaders = [];
     /** @var bool $useprogressbar Control whether importing should use progress bars or not. */
     protected $useprogressbar = false;
     /** @var \core\progress\display_if_slow|null $progress The progress bar instance. */
     protected $progress = null;
+    /** @var int|null $categoryid The course category the templates are created in, if any. */
     public $categoryid = null;
+    /** @var int|null $contextid The id of the context the templates are created in. */
     public $contextid;
 
     /**
@@ -227,7 +236,7 @@ class lp_importer {
             $this->progress = new \core\progress\none();
         }
 
-        // TODO this process bar does not work
+        // TODO this process bar does not work.
         $this->progress->start_progress('');
 
         while ($row = $this->importer->next()) {
@@ -268,6 +277,13 @@ class lp_importer {
      * @param competency_framework $framework
      */
 
+    /**
+     * Create a learning plan template from an imported row and link its competencies.
+     *
+     * Does nothing but show a warning if a template with the same shortname already exists in the context.
+     *
+     * @param \stdClass $workrole The imported row (shortname, description, competencyframeworkidnumber, relatedidnumbers).
+     */
     public function create_learning_plan_template($workrole) {
         global $DB, $OUTPUT;
 
@@ -311,7 +327,7 @@ class lp_importer {
             }
 
             if ($frameworkid) {
-                // Avoid duplicates
+                // Avoid duplicates.
                 $already = $DB->get_records_menu(
                     'competency_templatecomp',
                     ['templateid' => (int)$lp->get('id')],
@@ -319,7 +335,7 @@ class lp_importer {
                     'competencyid,competencyid'
                 );
 
-                // Find competencies and link them
+                // Find competencies and link them.
                 foreach (array_filter(array_map('trim', explode(',', $workrole->relatedidnumbers))) as $idnum) {
                     if ($idnum === '') {
                         continue;
@@ -360,12 +376,12 @@ class lp_importer {
      * @param competency_framework $framework
      */
     public function create_and_link_learning_plan_template($workrole, ?int $forcedframeworkid = null) {
-        // check for existing template
+        // Check for existing template.
         global $DB, $OUTPUT;
 
         $context = context_system::instance();
 
-        // Selected framework
+        // Selected framework.
         $targetfwid = $forcedframeworkid ?? (int)$workrole->get('competencyframeworkid');
 
         $fwshort = '';
@@ -376,7 +392,7 @@ class lp_importer {
             }
         }
 
-        $workroleName = $workrole->get('shortname');
+        $workrolename = $workrole->get('shortname');
 
         // Does a template with this shortname ALREADY exist for this framework?
         $existingtplidforthisfw = $DB->get_field_sql(
@@ -386,30 +402,30 @@ class lp_importer {
             JOIN {competency} c ON c.id = tc.competencyid
             WHERE t.shortname = :sn AND c.competencyframeworkid = :fw
             LIMIT 1",
-            ['sn' => $workroleName, 'fw' => $targetfwid]
+            ['sn' => $workrolename, 'fw' => $targetfwid]
         );
 
         if ($existingtplidforthisfw) {
-            // Already exists, skip
+            // Already exists, skip.
             echo $OUTPUT->notification(
-                "Template '{$workroleName}' already exists for framework '{$fwshort}'. Skipping.",
+                "Template '{$workrolename}' already exists for framework '{$fwshort}'. Skipping.",
                 'notifyinfo'
             );
             return;
         }
 
         $record = new \stdClass();
-        $record->shortname   = $workroleName;
+        $record->shortname   = $workrolename;
         $record->description = $workrole->get('description');
-        $record->contextid   = 1; // system
+        $record->contextid   = 1; // System context.
 
         $lp = api::create_template($record);
         echo $OUTPUT->notification(
-            "Created learning plan template '{$workroleName}' for framework '{$fwshort}'.",
+            "Created learning plan template '{$workrolename}' for framework '{$fwshort}'.",
             'notifysuccess'
         );
 
-        // Link competencies
+        // Link competencies.
         $relatedcompetencies = api::list_related_competencies($workrole->get('id'));
         foreach ($relatedcompetencies as $related) {
             $relatedid = $related->get('idnumber');

@@ -52,6 +52,9 @@ use core_competency\api;
 
 require_once($CFG->libdir . '/formslib.php');
 
+/**
+ * Form for choosing a competency framework and the text to match against competency ID numbers.
+ */
 class create extends moodleform {
     /**
      * Define the form - called by parent constructor
@@ -68,7 +71,10 @@ class create extends moodleform {
             $options[$framework->get('id')] = $framework->get('shortname');
         }
         if (empty($options)) {
-                $mform->addElement('html', '<div class="alert alert-warning">' . get_string('noframeworks_help', 'tool_lptmanager') . '</div>');
+            $mform->addElement(
+                'html',
+                '<div class="alert alert-warning">' . get_string('noframeworks_help', 'tool_lptmanager') . '</div>'
+            );
         } else {
             $mform->addElement('select', 'frameworkid', get_string('listcompetencyframeworkscaption', 'tool_lp'), $options);
             $mform->setType('frameworkid', PARAM_INT);

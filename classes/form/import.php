@@ -53,6 +53,9 @@ use csv_import_reader;
 
 require_once($CFG->libdir . '/formslib.php');
 
+/**
+ * Form for uploading a CSV file of learning plan templates to import.
+ */
 class import extends moodleform {
     /**
      * Define the form - called by parent constructor

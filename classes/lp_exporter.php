@@ -51,9 +51,13 @@ use stdClass;
 use csv_export_writer;
 use context_system;
 
+/**
+ * Exports learning plan templates to a CSV file.
+ */
 class lp_exporter {
     /** @var $error string */
     protected $error = '';
+    /** @var \core_competency\template|null $template The template being exported. */
     protected $template;
 
     /**
@@ -72,7 +76,10 @@ class lp_exporter {
         $this->template = api::read_template($templateid);
 
         $writer = new csv_export_writer();
-        $filename = clean_param(preg_replace('/\s+/', '_', $this->template->get('shortname')) . '-' . $this->template->get('id'), PARAM_FILE);
+        $filename = clean_param(
+            preg_replace('/\s+/', '_', $this->template->get('shortname')) . '-' . $this->template->get('id'),
+            PARAM_FILE
+        );
         $writer->set_filename($filename);
         $headers = lp_importer::list_required_headers();
         $writer->add_data($headers);
