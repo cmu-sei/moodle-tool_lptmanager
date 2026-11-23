@@ -270,14 +270,6 @@ class lp_importer {
     }
 
     /**
-     * Recursive function to add a competency with all it's children.
-     *
-     * @param stdClass $record Raw data for the new competency
-     * @param competency $parent
-     * @param competency_framework $framework
-     */
-
-    /**
      * Create a learning plan template from an imported row and link its competencies.
      *
      * Does nothing but show a warning if a template with the same shortname already exists in the context.
