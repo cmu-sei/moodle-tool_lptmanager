@@ -361,7 +361,9 @@ class lp_importer {
     }
 
     /**
-     * Create a learning plan template named after a competency and add the competencies related to it.
+     * Create a learning plan template named after a competency and link the competencies related to it.
+     *
+     * Each related competency is matched by idnumber within the target framework before being linked.
      *
      * Skips the competency, with a notification, if a template with the same shortname already exists for the framework.
      *
