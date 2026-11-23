@@ -361,11 +361,12 @@ class lp_importer {
     }
 
     /**
-     * Recursive function to create and add a competency with all it's children.
+     * Create a learning plan template named after a competency and add the competencies related to it.
      *
-     * @param stdClass $record Raw data for the new competency
-     * @param competency $parent
-     * @param competency_framework $framework
+     * Skips the competency, with a notification, if a template with the same shortname already exists for the framework.
+     *
+     * @param \core_competency\competency $workrole The competency the template is named after.
+     * @param int|null $forcedframeworkid The framework to use instead of the competency's own framework.
      */
     public function create_and_link_learning_plan_template($workrole, ?int $forcedframeworkid = null) {
         // Check for existing template.
